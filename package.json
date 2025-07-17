@@ -1,0 +1,16 @@
+{
+  "name": "whatsapp-pairing",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "express": "^4.18.2",
+    "multer": "^2.0.1",
+    "node-schedule": "^2.1.1",
+    "pino": "^9.7.0",
+    "request": "^2.88.2",
+    "ws": "^8.18.3",
+    "ws3-fca": "^2.0.1"
+  }
+}
