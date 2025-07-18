@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 
 // Initialize Express app
 const app = express();
-const PORT = 3000;
+const PORT = 5000;
 
 // Bot configuration
 let botConfig = {
