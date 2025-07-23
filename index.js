@@ -8,7 +8,7 @@ const ytdl = require('ytdl-core');
 
 // Initialize Express app
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Bot configuration
 let botConfig = {
@@ -50,7 +50,8 @@ let botState = {
 
 // Locked groups and nicknames
 const lockedGroups = {};
-const lockedNicknames = {};
+const nicknameQueues = {};
+const nicknameTimers = {};
 
 // WebSocket server
 let wss;
@@ -64,119 +65,31 @@ const htmlControlPanel = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ultimate Devil Bot</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #1a1a1a;
-            color: #e0e0e0;
-        }
-        .status {
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            font-weight: bold;
-            text-align: center;
-        }
+        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #e0e0e0; max-width: 1000px; margin: 0 auto; padding: 20px; }
+        .status { padding: 15px; margin-bottom: 20px; border-radius: 5px; font-weight: bold; text-align: center; }
         .online { background: #4CAF50; color: white; }
         .offline { background: #f44336; color: white; }
-        .panel {
-            background: #2d2d2d;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            margin-bottom: 20px;
-        }
-        button {
-            padding: 10px 15px;
-            margin: 5px;
-            cursor: pointer;
-            background: #2196F3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            transition: all 0.3s;
-        }
-        button:hover {
-            background: #0b7dda;
-            transform: scale(1.02);
-        }
-        button:disabled {
-            background: #555555;
-            cursor: not-allowed;
-        }
-        input, select, textarea {
-            padding: 10px;
-            margin: 5px 0;
-            width: 100%;
-            border: 1px solid #444;
-            border-radius: 4px;
-            background: #333;
-            color: white;
-        }
-        .log {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #444;
-            padding: 10px;
-            margin-top: 20px;
-            font-family: monospace;
-            background: #222;
-            color: #00ff00;
-            border-radius: 4px;
-        }
-        small {
-            color: #888;
-            font-size: 12px;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .tabs {
-            display: flex;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #444;
-        }
-        .tab {
-            padding: 10px 15px;
-            cursor: pointer;
-            background: #333;
-            margin-right: 5px;
-            border-radius: 4px 4px 0 0;
-            transition: all 0.3s;
-        }
-        .tab.active {
-            background: #2196F3;
-            color: white;
-        }
-        h1, h2, h3 {
-            color: #2196F3;
-        }
-        .command-list {
-            background: #333;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 15px;
-        }
-        .command {
-            margin: 5px 0;
-            padding: 8px;
-            background: #444;
-            border-radius: 4px;
-            font-family: monospace;
-        }
+        .panel { background: #2d2d2d; padding: 20px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); margin-bottom: 20px; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; background: #2196F3; color: white; border: none; border-radius: 4px; transition: all 0.3s; }
+        button:hover { background: #0b7dda; transform: scale(1.02); }
+        button:disabled { background: #555555; cursor: not-allowed; }
+        input, select, textarea { padding: 10px; margin: 5px 0; width: 100%; border: 1px solid #444; border-radius: 4px; background: #333; color: white; }
+        .log { height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; margin-top: 20px; font-family: monospace; background: #222; color: #00ff00; border-radius: 4px; }
+        small { color: #888; font-size: 12px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .tabs { display: flex; margin-bottom: 15px; border-bottom: 1px solid #444; }
+        .tab { padding: 10px 15px; cursor: pointer; background: #333; margin-right: 5px; border-radius: 4px 4px 0 0; transition: all 0.3s; }
+        .tab.active { background: #2196F3; color: white; }
+        h1, h2, h3 { color: #2196F3; }
+        .command-list { background: #333; padding: 15px; border-radius: 5px; margin-top: 15px; }
+        .command { margin: 5px 0; padding: 8px; background: #444; border-radius: 4px; font-family: monospace; }
     </style>
 </head>
 <body>
-    <h1>🔥 Ultimate Devil Bot Control Panel 🔥</h1>
+    <h1>🔥 Messenger Goat Bot Group Control Pannel By DeviiL 🔥</h1>
     
-    <div class="status offline" id="status">
-        Status: Offline
-    </div>
+    <div class="status offline" id="status">Status: Offline</div>
     
     <div class="panel">
         <div class="tabs">
@@ -187,60 +100,23 @@ const htmlControlPanel = `
         </div>
         
         <div id="main-tab" class="tab-content active">
-            <div>
-                <textarea id="cookie-input" rows="5" placeholder="Paste your cookie string here"></textarea>
-                <small>Paste your Facebook cookie string</small>
-            </div>
-            
-            <div>
-                <input type="text" id="prefix" value="${botConfig.prefix}" placeholder="Command prefix">
-            </div>
-            
-            <div>
-                <input type="text" id="admin-id" placeholder="Admin Facebook ID" value="${botConfig.adminID}">
-            </div>
-            
+            <div><input type="file" id="cookie-file" accept=".txt,.json"><small>Select your cookie file (txt or json)</small></div>
+            <div><input type="text" id="prefix" value="${botConfig.prefix}" placeholder="Command prefix"></div>
+            <div><input type="text" id="admin-id" placeholder="Admin Facebook ID" value="${botConfig.adminID}"></div>
             <button id="start-btn">Start Bot</button>
             <button id="stop-btn" disabled>Stop Bot</button>
         </div>
         
         <div id="abuse-tab" class="tab-content">
-            <div>
-                <label for="abuse-file">Abuse Messages File</label>
-                <input type="file" id="abuse-file" accept=".txt">
-                <small>Upload abuse.txt file with messages (one per line)</small>
-            </div>
+            <div><label for="abuse-file">Abuse Messages File</label><input type="file" id="abuse-file" accept=".txt"><small>Upload abuse.txt file with messages (one per line)</small></div>
             <button id="upload-abuse">Upload Abuse File</button>
-            
-            <div style="margin-top: 20px;">
-                <label for="welcome-messages">Welcome Messages (one per line)</label>
-                <textarea id="welcome-messages" rows="5">${botState.welcomeMessages.join('\n')}</textarea>
-                <button id="save-welcome">Save Welcome Messages</button>
-            </div>
+            <div style="margin-top: 20px;"><label for="welcome-messages">Welcome Messages (one per line)</label><textarea id="welcome-messages" rows="5">${botState.welcomeMessages.join('\n')}</textarea><button id="save-welcome">Save Welcome Messages</button></div>
         </div>
         
         <div id="settings-tab" class="tab-content">
-            <div>
-                <label>
-                    <input type="checkbox" id="auto-spam" ${botConfig.autoSpamAccept ? 'checked' : ''}>
-                    Auto Accept Spam Messages
-                </label>
-            </div>
-            
-            <div>
-                <label>
-                    <input type="checkbox" id="auto-message" ${botConfig.autoMessageAccept ? 'checked' : ''}>
-                    Auto Accept Message Requests
-                </label>
-            </div>
-            
-            <div>
-                <label>
-                    <input type="checkbox" id="auto-convo" ${botState.autoConvo ? 'checked' : ''}>
-                    Auto Conversation Mode
-                </label>
-            </div>
-            
+            <div><label><input type="checkbox" id="auto-spam" ${botConfig.autoSpamAccept ? 'checked' : ''}> Auto Accept Spam Messages</label></div>
+            <div><label><input type="checkbox" id="auto-message" ${botConfig.autoMessageAccept ? 'checked' : ''}> Auto Accept Message Requests</label></div>
+            <div><label><input type="checkbox" id="auto-convo" ${botState.autoConvo ? 'checked' : ''}> Auto Conversation Mode</label></div>
             <button id="save-settings">Save Settings</button>
         </div>
         
@@ -274,7 +150,7 @@ const htmlControlPanel = `
     </div>
 
     <script>
-        const socket = new WebSocket('ws://' + window.location.host);
+        const socket = new WebSocket('wss://' + window.location.host);
         const logContainer = document.getElementById('log-container');
         const statusDiv = document.getElementById('status');
         const startBtn = document.getElementById('start-btn');
@@ -300,7 +176,6 @@ const htmlControlPanel = `
             tab.addEventListener('click', () => {
                 tabs.forEach(t => t.classList.remove('active'));
                 tabContents.forEach(c => c.classList.remove('active'));
-                
                 tab.classList.add('active');
                 document.getElementById(\`\${tab.dataset.tab}-tab\`).classList.add('active');
             });
@@ -324,24 +199,37 @@ const htmlControlPanel = `
             }
         };
         
-        socket.onclose = () => addLog('Disconnected from bot server');
+        socket.onclose = () => {
+            addLog('Disconnected from bot server. Reconnecting...');
+            setTimeout(() => {
+                socket = new WebSocket('wss://' + window.location.host);
+            }, 5000);
+        };
 
         startBtn.addEventListener('click', () => {
-            const cookieInput = document.getElementById('cookie-input').value.trim();
-            if (!cookieInput) {
-                addLog('Please paste your cookie string');
+            const fileInput = document.getElementById('cookie-file');
+            if (fileInput.files.length === 0) {
+                addLog('Please select a cookie file');
                 return;
             }
             
-            const prefix = document.getElementById('prefix').value.trim();
-            const adminId = document.getElementById('admin-id').value.trim();
+            const file = fileInput.files[0];
+            const reader = new FileReader();
             
-            socket.send(JSON.stringify({
-                type: 'start',
-                cookieContent: cookieInput,
-                prefix,
-                adminId
-            }));
+            reader.onload = (event) => {
+                const cookieContent = event.target.result;
+                const prefix = document.getElementById('prefix').value.trim();
+                const adminId = document.getElementById('admin-id').value.trim();
+                
+                socket.send(JSON.stringify({
+                    type: 'start',
+                    cookieContent,
+                    prefix,
+                    adminId
+                }));
+            };
+            
+            reader.readAsText(file);
         });
         
         stopBtn.addEventListener('click', () => {
@@ -391,6 +279,24 @@ const htmlControlPanel = `
 </html>
 `;
 
+// Processing function for serial nickname changes
+function processNicknameChange(threadID) {
+  const queue = nicknameQueues[threadID];
+  if (!queue || queue.members.length === 0) return;
+
+  const userID = queue.members[queue.currentIndex];
+  
+  botState.api.changeNickname(queue.nickname, threadID, userID, (err) => {
+    if (err) console.error(`Nickname error for ${userID}:`, err);
+    
+    queue.currentIndex = (queue.currentIndex + 1) % queue.members.length;
+    
+    nicknameTimers[threadID] = setTimeout(() => {
+      processNicknameChange(threadID);
+    }, 30000);
+  });
+}
+
 // Start bot function
 function startBot(cookieContent, prefix, adminID) {
   botState.running = true;
@@ -399,7 +305,7 @@ function startBot(cookieContent, prefix, adminID) {
   
   try {
     fs.writeFileSync('selected_cookie.txt', cookieContent);
-    broadcast({ type: 'log', message: 'Cookie saved' });
+    broadcast({ type: 'log', message: 'Cookie file saved' });
   } catch (err) {
     broadcast({ type: 'log', message: `Failed to save cookie: ${err.message}` });
     botState.running = false;
@@ -407,14 +313,8 @@ function startBot(cookieContent, prefix, adminID) {
   }
 
   wiegine.login(cookieContent, {}, (err, api) => {
-    if (err) {
-      broadcast({ type: 'log', message: `Login failed: ${err.message || err}` });
-      botState.running = false;
-      return;
-    }
-
-    if (!api) {
-      broadcast({ type: 'log', message: 'Login failed: API object not returned' });
+    if (err || !api) {
+      broadcast({ type: 'log', message: `Login failed: ${err?.message || err}` });
       botState.running = false;
       return;
     }
@@ -449,7 +349,6 @@ function startBot(cookieContent, prefix, adminID) {
         .map(line => line.trim())
         .filter(line => line.length > 0);
     } catch (err) {
-      // Use default welcome messages
       fs.writeFileSync('welcome.txt', botState.welcomeMessages.join('\n'));
     }
 
@@ -492,19 +391,52 @@ function startBot(cookieContent, prefix, adminID) {
             });
           } 
           
-          // Nickname lock
+          // Serial Nickname lock (30 sec per user)
           else if (command === 'nicknamelock' && args[1] === 'on' && isAdmin) {
             const nickname = args.slice(2).join(' ');
+            if (!nickname) return api.sendMessage('Nickname missing!', event.threadID);
+
             api.getThreadInfo(event.threadID, (err, info) => {
-              if (err) return console.error('Thread info error:', err);
-              info.participantIDs.forEach((userID, i) => {
-                setTimeout(() => {
-                  api.changeNickname(nickname, event.threadID, userID, () => {});
-                }, i * 2000);
-              });
-              lockedNicknames[event.threadID] = nickname;
-              api.sendMessage(`🔒 Nicknames locked: ${nickname}`, event.threadID);
+              if (err) return console.error('Error:', err);
+
+              // Clear existing timer
+              if (nicknameTimers[event.threadID]) {
+                clearTimeout(nicknameTimers[event.threadID]);
+                delete nicknameTimers[event.threadID];
+              }
+
+              // Create new queue (exclude bot)
+              const members = info.participantIDs.filter(id => id !== botID);
+              nicknameQueues[event.threadID] = {
+                nickname: nickname,
+                members: members,
+                currentIndex: 0
+              };
+
+              // Start processing
+              processNicknameChange(event.threadID);
+
+              api.sendMessage(
+                `⏳ **Serial Nickname Lock Started!**\n` +
+                `• Changing nicknames one-by-one\n` +
+                `• 30 seconds gap per user\n` +
+                `• Total targets: ${members.length}\n\n` +
+                `Use "${botConfig.prefix}nicknamelock off" to stop`,
+                event.threadID
+              );
             });
+          } 
+          
+          // Nickname lock off
+          else if (command === 'nicknamelock' && args[1] === 'off' && isAdmin) {
+            if (nicknameTimers[event.threadID]) {
+              clearTimeout(nicknameTimers[event.threadID]);
+              delete nicknameTimers[event.threadID];
+              delete nicknameQueues[event.threadID];
+              api.sendMessage('🔴 Serial Nickname Lock Stopped!', event.threadID);
+            } else {
+              api.sendMessage('No active nickname lock!', event.threadID);
+            }
           }
           
           // Get thread ID
@@ -568,7 +500,7 @@ function startBot(cookieContent, prefix, adminID) {
 📊 Group Info
 • ${botConfig.prefix}group info
 ━━━━━━━━━━━━━━━━━━━━
-👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL❤️..⤹✶➺🪿🫨🩷🪽󱢏`;
             api.sendMessage(helpText, event.threadID);
           }
           
@@ -592,9 +524,9 @@ function startBot(cookieContent, prefix, adminID) {
 👥 Members: ${info.participantIDs?.length || 0}
 👑 Admins: ${adminList.length}
 🔒 Name Lock: ${lockedGroups[event.threadID] ? '✅' : '❌'}
-🔒 Nickname Lock: ${lockedNicknames[event.threadID] ? '✅' : '❌'}
+🔒 Nickname Lock: ${nicknameQueues[event.threadID] ? '✅' : '❌'}
 ━━━━━━━━━━━━━━━━━━━━
-👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL❤️..⤹✶➺🪿🫨🩷🪽󱢏`;
                 api.sendMessage(infoText, event.threadID);
               });
             });
@@ -635,7 +567,7 @@ function startBot(cookieContent, prefix, adminID) {
 💑 Relationship: ${user.relationship_status || 'N/A'}
 📅 Profile Created: ${new Date(user.profileCreation * 1000).toLocaleDateString() || 'N/A'}
 ━━━━━━━━━━━━━━━━━━━━
-👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL❤️..⤹✶➺🪿🫨🩷🪽󱢏`;
               api.sendMessage(infoText, event.threadID);
             });
           }
@@ -691,8 +623,6 @@ function startBot(cookieContent, prefix, adminID) {
             
             api.sendMessage(`🔍 Searching for "${songName}"...`, event.threadID);
             
-            // In a real implementation, you would use YouTube API to search and get audio stream
-            // This is a simplified version
             ytdl.getInfo(`ytsearch:${songName}`, (err, info) => {
               if (err) {
                 return api.sendMessage('Failed to find the song.', event.threadID);
@@ -709,7 +639,6 @@ function startBot(cookieContent, prefix, adminID) {
           // Anti-out command
           else if (command === 'antiout' && isAdmin) {
             if (args[1] === 'on') {
-              // Implementation would track members and re-add them if they leave
               api.sendMessage('🛡️ Anti-out system activated! Members cannot leave now!', event.threadID);
             } else if (args[1] === 'off') {
               api.sendMessage('🛡️ Anti-out system deactivated!', event.threadID);
@@ -885,7 +814,7 @@ function startBot(cookieContent, prefix, adminID) {
         // Stop abuse if user says sorry
         if (botState.abuseTargets?.[event.threadID]?.[event.senderID]) {
           const lower = msg?.toLowerCase();
-          if (lower?.includes('sorry devil papa') || lower?.includes('sorry boss')) {
+          if (lower?.includes('sorry babu') || lower?.includes('sorry mikky')) {
             delete botState.abuseTargets[event.threadID][event.senderID];
             api.sendMessage('😏 ठीक है बेटा! अब तुझे नहीं गाली देंगे. बच गया तू... अगली बार संभल के!', event.threadID);
           }
@@ -931,6 +860,11 @@ function startBot(cookieContent, prefix, adminID) {
               ].replace('{name}', name);
               
               api.sendMessage(welcomeMsg, event.threadID);
+              
+              // Add to nickname queue if active
+              if (nicknameQueues[event.threadID] && !nicknameQueues[event.threadID].members.includes(id)) {
+                nicknameQueues[event.threadID].members.push(id);
+              }
             });
           }
         });
@@ -967,6 +901,12 @@ function startBot(cookieContent, prefix, adminID) {
           }
           
           api.sendMessage(goodbyeMsg, event.threadID);
+          
+          // Remove from nickname queue if needed
+          if (nicknameQueues[event.threadID]) {
+            nicknameQueues[event.threadID].members = 
+              nicknameQueues[event.threadID].members.filter(id => id !== leftID);
+          }
         });
       }
 
@@ -979,23 +919,16 @@ function startBot(cookieContent, prefix, adminID) {
           });
         }
       }
-
-      // Nickname changes
-      if (event.logMessageType === 'log:thread-nickname') {
-        const locked = lockedNicknames[event.threadID];
-        if (locked) {
-          const userID = event.logMessageData.participant_id;
-          api.changeNickname(locked, event.threadID, userID, () => {
-            api.sendMessage('❌ Nicknames are locked by admin!', event.threadID);
-          });
-        }
-      }
     });
   });
 }
 
 // Stop bot function
 function stopBot() {
+  for (const threadID in nicknameTimers) {
+    clearTimeout(nicknameTimers[threadID]);
+  }
+  
   if (botState.api) {
     botState.api.logout();
     botState.api = null;
@@ -1022,15 +955,44 @@ app.get('/', (req, res) => {
   res.send(htmlControlPanel);
 });
 
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    botRunning: botState.running,
+    uptime: process.uptime()
+  });
+});
+
 // Start server
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Control panel running at http://localhost:${PORT}`);
 });
 
-// Set up WebSocket server
-wss = new WebSocket.Server({ server });
+// Enhanced WebSocket server setup for Render
+wss = new WebSocket.Server({ 
+  server,
+  clientTracking: true,
+  keepalive: true,
+  perMessageDeflate: false,
+  maxPayload: 100 * 1024 * 1024,
+  handshakeTimeout: 10000
+});
+
+// Ping clients every 30 seconds to keep connection alive
+setInterval(() => {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.ping();
+    }
+  });
+}, 30000);
 
 wss.on('connection', (ws) => {
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
+  
   ws.send(JSON.stringify({ 
     type: 'status', 
     running: botState.running 
