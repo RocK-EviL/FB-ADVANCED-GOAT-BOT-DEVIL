@@ -1,5 +1,4 @@
 const fs = require('fs');
-const path = require('path');
 const express = require('express');
 const wiegine = require('ws3-fca');
 const WebSocket = require('ws');
@@ -79,6 +78,8 @@ const htmlControlPanel = `
         }
         .online { background: #4CAF50; color: white; }
         .offline { background: #f44336; color: white; }
+        .connecting { background: #ff9800; color: white; }
+        .server-connected { background: #2196F3; color: white; }
         .panel {
             background: #2d2d2d;
             padding: 20px;
@@ -172,8 +173,8 @@ const htmlControlPanel = `
 <body>
     <h1>🔥 Ultimate Devil Bot Control Panel 🔥</h1>
     
-    <div class="status offline" id="status">
-        Status: Offline
+    <div class="status connecting" id="status">
+        Status: Connecting to server...
     </div>
     
     <div class="panel">
@@ -257,7 +258,6 @@ const htmlControlPanel = `
     </div>
 
     <script>
-        const socket = new WebSocket('ws://' + window.location.host);
         const logContainer = document.getElementById('log-container');
         const statusDiv = document.getElementById('status');
         const startBtn = document.getElementById('start-btn');
@@ -287,9 +287,13 @@ const htmlControlPanel = `
             });
         });
 
+        // Dynamic protocol for Render
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = new WebSocket(protocol + '//' + window.location.host);
+
         socket.onopen = () => {
             addLog('Connected to bot server');
-            statusDiv.className = 'status online';
+            statusDiv.className = 'status server-connected';
             statusDiv.textContent = 'Status: Connected to Server';
         };
         
@@ -298,8 +302,8 @@ const htmlControlPanel = `
             if (data.type === 'log') {
                 addLog(data.message);
             } else if (data.type === 'status') {
-                statusDiv.className = data.running ? 'status online' : 'status offline';
-                statusDiv.textContent = \`Status: \${data.running ? 'Online' : 'Offline'}\`;
+                statusDiv.className = data.running ? 'status online' : 'status server-connected';
+                statusDiv.textContent = \`Status: \${data.running ? 'Online' : 'Connected to Server'}\`;
                 startBtn.disabled = data.running;
                 stopBtn.disabled = !data.running;
             } else if (data.type === 'settings') {
@@ -312,6 +316,12 @@ const htmlControlPanel = `
             addLog('Disconnected from bot server');
             statusDiv.className = 'status offline';
             statusDiv.textContent = 'Status: Disconnected';
+        };
+        
+        socket.onerror = (error) => {
+            addLog(\`WebSocket error: \${error.message}\`);
+            statusDiv.className = 'status offline';
+            statusDiv.textContent = 'Status: Connection Error';
         };
 
         startBtn.addEventListener('click', () => {
