@@ -7,7 +7,7 @@ const axios = require('axios');
 
 // Initialize Express app
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Bot configuration
 let botConfig = {
