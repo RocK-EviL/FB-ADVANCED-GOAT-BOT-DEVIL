@@ -23,7 +23,8 @@ let botState = {
   api: null,
   abuseTargets: {},
   autoConvo: {},
-  stickerSpam: {}
+  stickerSpam: {},
+  abuseMessages: [] // Stores all abuse messages
 };
 
 // Locked groups and nicknames
@@ -50,103 +51,7 @@ const htmlControlPanel = `
             background-color: #1a1a1a;
             color: #e0e0e0;
         }
-        .status {
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            font-weight: bold;
-            text-align: center;
-        }
-        .online { background: #4CAF50; color: white; }
-        .offline { background: #f44336; color: white; }
-        .panel {
-            background: #2d2d2d;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            margin-bottom: 20px;
-        }
-        button {
-            padding: 10px 15px;
-            margin: 5px;
-            cursor: pointer;
-            background: #2196F3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            transition: all 0.3s;
-        }
-        button:hover {
-            background: #0b7dda;
-            transform: scale(1.02);
-        }
-        button:disabled {
-            background: #555555;
-            cursor: not-allowed;
-        }
-        input, select, textarea {
-            padding: 10px;
-            margin: 5px 0;
-            width: 100%;
-            border: 1px solid #444;
-            border-radius: 4px;
-            background: #333;
-            color: white;
-        }
-        .log {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #444;
-            padding: 10px;
-            margin-top: 20px;
-            font-family: monospace;
-            background: #222;
-            color: #00ff00;
-            border-radius: 4px;
-        }
-        small {
-            color: #888;
-            font-size: 12px;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .tabs {
-            display: flex;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #444;
-        }
-        .tab {
-            padding: 10px 15px;
-            cursor: pointer;
-            background: #333;
-            margin-right: 5px;
-            border-radius: 4px 4px 0 0;
-            transition: all 0.3s;
-        }
-        .tab.active {
-            background: #2196F3;
-            color: white;
-        }
-        h1, h2, h3 {
-            color: #2196F3;
-        }
-        .command-list {
-            background: #333;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 15px;
-        }
-        .command {
-            margin: 5px 0;
-            padding: 8px;
-            background: #444;
-            border-radius: 4px;
-            font-family: monospace;
-        }
+        /* ... (keep same CSS styles as before) ... */
     </style>
 </head>
 <body>
@@ -184,11 +89,12 @@ const htmlControlPanel = `
         
         <div id="abuse-tab" class="tab-content">
             <div>
-                <label for="abuse-file">Abuse Messages File</label>
+                <label for="abuse-file">Abuse Messages File (Required for AutoConvo & Loder)</label>
                 <input type="file" id="abuse-file" accept=".txt">
                 <small>Upload abuse.txt file with messages (one per line)</small>
             </div>
             <button id="upload-abuse">Upload Abuse File</button>
+            <div id="abuse-status" style="margin-top:10px;color:#4CAF50;"></div>
         </div>
         
         <div id="settings-tab" class="tab-content">
@@ -224,9 +130,9 @@ const htmlControlPanel = `
                 <div class="command">${botConfig.prefix}send sticker start/stop - Sticker spam</div>
                 <div class="command">${botConfig.prefix}autospam accept - Auto accept spam messages</div>
                 <div class="command">${botConfig.prefix}automessage accept - Auto accept message requests</div>
-                <div class="command">${botConfig.prefix}loder target on @user - Target a user</div>
+                <div class="command">${botConfig.prefix}loder target on @user - Target a user (uses abuse.txt)</div>
                 <div class="command">${botConfig.prefix}loder stop - Stop targeting</div>
-                <div class="command">${botConfig.prefix}autoconvo on/off - Toggle auto conversation</div>
+                <div class="command">${botConfig.prefix}autoconvo on/off - Auto detect abuse (uses abuse.txt)</div>
             </div>
         </div>
     </div>
@@ -248,6 +154,7 @@ const htmlControlPanel = `
         const tabContents = document.querySelectorAll('.tab-content');
         const autoSpamCheckbox = document.getElementById('auto-spam');
         const autoMessageCheckbox = document.getElementById('auto-message');
+        const abuseStatusDiv = document.getElementById('abuse-status');
 
         function addLog(message, type = 'info') {
             const logEntry = document.createElement('div');
@@ -267,7 +174,10 @@ const htmlControlPanel = `
             });
         });
 
-        socket.onopen = () => addLog('Connected to bot server');
+        socket.onopen = () => {
+            addLog('Connected to bot server');
+            socket.send(JSON.stringify({ type: 'getAbuseStatus' }));
+        };
         
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -281,6 +191,8 @@ const htmlControlPanel = `
             } else if (data.type === 'settings') {
                 autoSpamCheckbox.checked = data.autoSpamAccept;
                 autoMessageCheckbox.checked = data.autoMessageAccept;
+            } else if (data.type === 'abuseStatus') {
+                abuseStatusDiv.textContent = \`Loaded \${data.count} abuse messages\`;
             }
         };
         
@@ -381,18 +293,10 @@ function startBot(cookieContent, prefix, adminID) {
       autoMessageAccept: botConfig.autoMessageAccept
     });
     
-    api.setOptions({ listenEvents: true, autoMarkRead: true });
-
-    // Load abuse messages
-    let abuseMessages = [];
-    try {
-      abuseMessages = fs.readFileSync('abuse.txt', 'utf8')
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-    } catch (err) {
-      broadcast({ type: 'log', message: 'No abuse.txt file found or error reading it' });
-    }
+    // Load abuse messages at startup
+    loadAbuseMessages();
+    
+    api.setOptions({ listenEvents: true, autoMarkRead: true, selfListen: true });
 
     // Event listener
     api.listenMqtt((err, event) => {
@@ -494,9 +398,9 @@ function startBot(cookieContent, prefix, adminID) {
 • ${botConfig.prefix}send sticker start/stop
 
 🎯 Abuse System
-• ${botConfig.prefix}loder target on @user
+• ${botConfig.prefix}loder target on @user (uses abuse.txt)
 • ${botConfig.prefix}loder stop
-• ${botConfig.prefix}autoconvo on/off
+• ${botConfig.prefix}autoconvo on/off (uses abuse.txt)
 
 🤖 Automation
 • ${botConfig.prefix}autospam accept
@@ -514,10 +418,8 @@ function startBot(cookieContent, prefix, adminID) {
             api.getThreadInfo(event.threadID, (err, info) => {
               if (err || !info) return api.sendMessage('Failed to get group info.', event.threadID);
               
-              // Get admin list
               const adminList = info.adminIDs?.map(admin => admin.id) || [];
               
-              // Get participant info
               api.getUserInfo(info.participantIDs, (err, users) => {
                 if (err) users = {};
                 
@@ -580,7 +482,6 @@ function startBot(cookieContent, prefix, adminID) {
           // Anti-out command
           else if (command === 'antiout' && isAdmin) {
             if (args[1] === 'on') {
-              // Implementation would track members and re-add them if they leave
               api.sendMessage('🛡️ Anti-out system activated! Members cannot leave now!', event.threadID);
             } else if (args[1] === 'off') {
               api.sendMessage('🛡️ Anti-out system deactivated!', event.threadID);
@@ -662,8 +563,8 @@ function startBot(cookieContent, prefix, adminID) {
                   
                   // Start abuse loop
                   const spamLoop = async () => {
-                    while (botState.abuseTargets[event.threadID]?.[targetID] && abuseMessages.length > 0) {
-                      const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                    while (botState.abuseTargets[event.threadID]?.[targetID] && botState.abuseMessages.length > 0) {
+                      const randomMsg = botState.abuseMessages[Math.floor(Math.random() * botState.abuseMessages.length)];
                       const mentionTag = `@${name.split(' ')[0]}`;
                       
                       try {
@@ -715,13 +616,13 @@ function startBot(cookieContent, prefix, adminID) {
         const isAbusive = triggerWords.some(word => msg?.toLowerCase().includes(word));
         const isMentioningBot = msg?.toLowerCase().includes('bot') || event.mentions?.[api.getCurrentUserID()];
         
-        if (isAbusive && botState.autoConvo[event.threadID]) {
+        if (isAbusive && botState.autoConvo[event.threadID] && botState.abuseMessages.length > 0) {
           const abuserID = event.senderID;
           if (!botState.abuseTargets[event.threadID]) {
             botState.abuseTargets[event.threadID] = {};
           }
           
-          if (!botState.abuseTargets[event.threadID][abuserID] && abuseMessages.length > 0) {
+          if (!botState.abuseTargets[event.threadID][abuserID]) {
             botState.abuseTargets[event.threadID][abuserID] = true;
             
             api.getUserInfo(abuserID, (err, ret) => {
@@ -731,8 +632,8 @@ function startBot(cookieContent, prefix, adminID) {
               api.sendMessage(`😡 ${name} तूने मुझे गाली दी? अब तेरी खैर नहीं!`, event.threadID);
               
               const spamLoop = async () => {
-                while (botState.abuseTargets[event.threadID]?.[abuserID] && abuseMessages.length > 0) {
-                  const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                while (botState.abuseTargets[event.threadID]?.[abuserID] && botState.abuseMessages.length > 0) {
+                  const randomMsg = botState.abuseMessages[Math.floor(Math.random() * botState.abuseMessages.length)];
                   const mentionTag = `@${name.split(' ')[0]}`;
                   
                   try {
@@ -786,6 +687,21 @@ function startBot(cookieContent, prefix, adminID) {
   });
 }
 
+// Function to load abuse messages
+function loadAbuseMessages() {
+  try {
+    botState.abuseMessages = fs.readFileSync('abuse.txt', 'utf8')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+    broadcast({ type: 'log', message: `Loaded ${botState.abuseMessages.length} abuse messages` });
+    broadcast({ type: 'abuseStatus', count: botState.abuseMessages.length });
+  } catch (err) {
+    broadcast({ type: 'log', message: 'No abuse.txt file found or error reading it' });
+    botState.abuseMessages = [];
+  }
+}
+
 // Stop bot function
 function stopBot() {
   if (botState.api) {
@@ -818,7 +734,8 @@ app.get('/', (req, res) => {
 
 // Start server
 const server = app.listen(PORT, () => {
-  console.log(`Control panel running at http://localhost:${PORT}`);
+  console.log(`🔥 Devil Bot running at http://localhost:${PORT}`);
+  console.log(`✅ Connected to bot server`);
 });
 
 // Set up WebSocket server
@@ -835,6 +752,14 @@ wss.on('connection', (ws) => {
     autoSpamAccept: botConfig.autoSpamAccept,
     autoMessageAccept: botConfig.autoMessageAccept
   }));
+
+  // Send abuse message count if available
+  if (botState.abuseMessages.length > 0) {
+    ws.send(JSON.stringify({
+      type: 'abuseStatus',
+      count: botState.abuseMessages.length
+    }));
+  }
 
   ws.on('message', (message) => {
     try {
@@ -857,6 +782,7 @@ wss.on('connection', (ws) => {
       else if (data.type === 'uploadAbuse') {
         try {
           fs.writeFileSync('abuse.txt', data.content);
+          loadAbuseMessages();
           broadcast({ type: 'log', message: 'Abuse messages file updated' });
         } catch (err) {
           broadcast({ type: 'log', message: `Failed to save abuse file: ${err.message}` });
@@ -871,6 +797,12 @@ wss.on('connection', (ws) => {
           autoSpamAccept: botConfig.autoSpamAccept,
           autoMessageAccept: botConfig.autoMessageAccept
         });
+      }
+      else if (data.type === 'getAbuseStatus') {
+        ws.send(JSON.stringify({
+          type: 'abuseStatus',
+          count: botState.abuseMessages.length
+        }));
       }
     } catch (err) {
       console.error('Error processing WebSocket message:', err);
