@@ -4,11 +4,10 @@ const express = require('express');
 const wiegine = require('ws3-fca');
 const WebSocket = require('ws');
 const axios = require('axios');
-const ytdl = require('ytdl-core');
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // Bot configuration
 let botConfig = {
@@ -23,35 +22,13 @@ let botState = {
   running: false,
   api: null,
   abuseTargets: {},
-  autoConvo: false,
-  stickerSpam: {},
-  welcomeMessages: [
-    "🌟 Welcome {name} to the group! Enjoy your stay! 🌟",
-    "🔥 {name} just joined the party! Let's get wild! 🔥",
-    "👋 Hey {name}, Devil's crew welcomes you! Behave or get roasted! 👋",
-    "🎉 {name} has arrived! The fun begins now! 🎉",
-    "😈 Devil's child {name} just entered! Watch your back! 😈"
-  ],
-  goodbyeMessages: {
-    member: [
-      "😂 {name} couldn't handle the heat and left! One less noob! 😂",
-      "🚪 {name} just left. Was it something we said? 🤔",
-      "👋 Bye {name}! Don't let the door hit you on the way out! 👋",
-      "💨 {name} vanished faster than my patience! 💨",
-      "😏 {name} got scared and ran away! Weakling! 😏"
-    ],
-    admin: [
-      "💥 Admin {name} kicked someone! That's what you get for messing with us! 💥",
-      "👊 Boss {name} showed someone the door! Don't mess with the Devil! 👊",
-      "⚡ {name} just demonstrated their admin powers! Respect! ⚡"
-    ]
-  }
+  autoConvo: {},
+  stickerSpam: {}
 };
 
 // Locked groups and nicknames
 const lockedGroups = {};
-const nicknameQueues = {};
-const nicknameTimers = {};
+const lockedNicknames = {};
 
 // WebSocket server
 let wss;
@@ -65,31 +42,119 @@ const htmlControlPanel = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ultimate Devil Bot</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #e0e0e0; max-width: 1000px; margin: 0 auto; padding: 20px; }
-        .status { padding: 15px; margin-bottom: 20px; border-radius: 5px; font-weight: bold; text-align: center; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .status {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+        }
         .online { background: #4CAF50; color: white; }
         .offline { background: #f44336; color: white; }
-        .panel { background: #2d2d2d; padding: 20px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); margin-bottom: 20px; }
-        button { padding: 10px 15px; margin: 5px; cursor: pointer; background: #2196F3; color: white; border: none; border-radius: 4px; transition: all 0.3s; }
-        button:hover { background: #0b7dda; transform: scale(1.02); }
-        button:disabled { background: #555555; cursor: not-allowed; }
-        input, select, textarea { padding: 10px; margin: 5px 0; width: 100%; border: 1px solid #444; border-radius: 4px; background: #333; color: white; }
-        .log { height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; margin-top: 20px; font-family: monospace; background: #222; color: #00ff00; border-radius: 4px; }
-        small { color: #888; font-size: 12px; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .tabs { display: flex; margin-bottom: 15px; border-bottom: 1px solid #444; }
-        .tab { padding: 10px 15px; cursor: pointer; background: #333; margin-right: 5px; border-radius: 4px 4px 0 0; transition: all 0.3s; }
-        .tab.active { background: #2196F3; color: white; }
-        h1, h2, h3 { color: #2196F3; }
-        .command-list { background: #333; padding: 15px; border-radius: 5px; margin-top: 15px; }
-        .command { margin: 5px 0; padding: 8px; background: #444; border-radius: 4px; font-family: monospace; }
+        .panel {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            cursor: pointer;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #0b7dda;
+            transform: scale(1.02);
+        }
+        button:disabled {
+            background: #555555;
+            cursor: not-allowed;
+        }
+        input, select, textarea {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #333;
+            color: white;
+        }
+        .log {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            padding: 10px;
+            margin-top: 20px;
+            font-family: monospace;
+            background: #222;
+            color: #00ff00;
+            border-radius: 4px;
+        }
+        small {
+            color: #888;
+            font-size: 12px;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #444;
+        }
+        .tab {
+            padding: 10px 15px;
+            cursor: pointer;
+            background: #333;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: #2196F3;
+            color: white;
+        }
+        h1, h2, h3 {
+            color: #2196F3;
+        }
+        .command-list {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+        .command {
+            margin: 5px 0;
+            padding: 8px;
+            background: #444;
+            border-radius: 4px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
-    <h1>🔥 Messenger Goat Bot Group Control Pannel By DeviiL 🔥</h1>
+    <h1>🔥 Ultimate Devil Bot Control Panel 🔥</h1>
     
-    <div class="status offline" id="status">Status: Offline</div>
+    <div class="status offline" id="status">
+        Status: Offline
+    </div>
     
     <div class="panel">
         <div class="tabs">
@@ -100,23 +165,47 @@ const htmlControlPanel = `
         </div>
         
         <div id="main-tab" class="tab-content active">
-            <div><input type="file" id="cookie-file" accept=".txt,.json"><small>Select your cookie file (txt or json)</small></div>
-            <div><input type="text" id="prefix" value="${botConfig.prefix}" placeholder="Command prefix"></div>
-            <div><input type="text" id="admin-id" placeholder="Admin Facebook ID" value="${botConfig.adminID}"></div>
+            <div>
+                <input type="file" id="cookie-file" accept=".txt,.json">
+                <small>Select your cookie file (txt or json)</small>
+            </div>
+            
+            <div>
+                <input type="text" id="prefix" value="${botConfig.prefix}" placeholder="Command prefix">
+            </div>
+            
+            <div>
+                <input type="text" id="admin-id" placeholder="Admin Facebook ID" value="${botConfig.adminID}">
+            </div>
+            
             <button id="start-btn">Start Bot</button>
             <button id="stop-btn" disabled>Stop Bot</button>
         </div>
         
         <div id="abuse-tab" class="tab-content">
-            <div><label for="abuse-file">Abuse Messages File</label><input type="file" id="abuse-file" accept=".txt"><small>Upload abuse.txt file with messages (one per line)</small></div>
+            <div>
+                <label for="abuse-file">Abuse Messages File</label>
+                <input type="file" id="abuse-file" accept=".txt">
+                <small>Upload abuse.txt file with messages (one per line)</small>
+            </div>
             <button id="upload-abuse">Upload Abuse File</button>
-            <div style="margin-top: 20px;"><label for="welcome-messages">Welcome Messages (one per line)</label><textarea id="welcome-messages" rows="5">${botState.welcomeMessages.join('\n')}</textarea><button id="save-welcome">Save Welcome Messages</button></div>
         </div>
         
         <div id="settings-tab" class="tab-content">
-            <div><label><input type="checkbox" id="auto-spam" ${botConfig.autoSpamAccept ? 'checked' : ''}> Auto Accept Spam Messages</label></div>
-            <div><label><input type="checkbox" id="auto-message" ${botConfig.autoMessageAccept ? 'checked' : ''}> Auto Accept Message Requests</label></div>
-            <div><label><input type="checkbox" id="auto-convo" ${botState.autoConvo ? 'checked' : ''}> Auto Conversation Mode</label></div>
+            <div>
+                <label>
+                    <input type="checkbox" id="auto-spam" ${botConfig.autoSpamAccept ? 'checked' : ''}>
+                    Auto Accept Spam Messages
+                </label>
+            </div>
+            
+            <div>
+                <label>
+                    <input type="checkbox" id="auto-message" ${botConfig.autoMessageAccept ? 'checked' : ''}>
+                    Auto Accept Message Requests
+                </label>
+            </div>
+            
             <button id="save-settings">Save Settings</button>
         </div>
         
@@ -131,15 +220,13 @@ const htmlControlPanel = `
                 <div class="command">${botConfig.prefix}uid @mention - Get mentioned user's ID</div>
                 <div class="command">${botConfig.prefix}info @mention - Get user information</div>
                 <div class="command">${botConfig.prefix}group info - Get group information</div>
-                <div class="command">${botConfig.prefix}pair - Pair two random members</div>
-                <div class="command">${botConfig.prefix}music &lt;song name&gt; - Play YouTube music</div>
                 <div class="command">${botConfig.prefix}antiout on/off - Toggle anti-out feature</div>
                 <div class="command">${botConfig.prefix}send sticker start/stop - Sticker spam</div>
                 <div class="command">${botConfig.prefix}autospam accept - Auto accept spam messages</div>
                 <div class="command">${botConfig.prefix}automessage accept - Auto accept message requests</div>
                 <div class="command">${botConfig.prefix}loder target on @user - Target a user</div>
                 <div class="command">${botConfig.prefix}loder stop - Stop targeting</div>
-                <div class="command">autoconvo on/off - Toggle auto conversation</div>
+                <div class="command">${botConfig.prefix}autoconvo on/off - Toggle auto conversation</div>
             </div>
         </div>
     </div>
@@ -150,19 +237,17 @@ const htmlControlPanel = `
     </div>
 
     <script>
-        const socket = new WebSocket('wss://' + window.location.host);
+        const socket = new WebSocket('ws://' + window.location.host);
         const logContainer = document.getElementById('log-container');
         const statusDiv = document.getElementById('status');
         const startBtn = document.getElementById('start-btn');
         const stopBtn = document.getElementById('stop-btn');
         const uploadAbuseBtn = document.getElementById('upload-abuse');
-        const saveWelcomeBtn = document.getElementById('save-welcome');
         const saveSettingsBtn = document.getElementById('save-settings');
         const tabs = document.querySelectorAll('.tab');
         const tabContents = document.querySelectorAll('.tab-content');
         const autoSpamCheckbox = document.getElementById('auto-spam');
         const autoMessageCheckbox = document.getElementById('auto-message');
-        const autoConvoCheckbox = document.getElementById('auto-convo');
 
         function addLog(message, type = 'info') {
             const logEntry = document.createElement('div');
@@ -176,6 +261,7 @@ const htmlControlPanel = `
             tab.addEventListener('click', () => {
                 tabs.forEach(t => t.classList.remove('active'));
                 tabContents.forEach(c => c.classList.remove('active'));
+                
                 tab.classList.add('active');
                 document.getElementById(\`\${tab.dataset.tab}-tab\`).classList.add('active');
             });
@@ -195,16 +281,10 @@ const htmlControlPanel = `
             } else if (data.type === 'settings') {
                 autoSpamCheckbox.checked = data.autoSpamAccept;
                 autoMessageCheckbox.checked = data.autoMessageAccept;
-                autoConvoCheckbox.checked = data.autoConvo;
             }
         };
         
-        socket.onclose = () => {
-            addLog('Disconnected from bot server. Reconnecting...');
-            setTimeout(() => {
-                socket = new WebSocket('wss://' + window.location.host);
-            }, 5000);
-        };
+        socket.onclose = () => addLog('Disconnected from bot server');
 
         startBtn.addEventListener('click', () => {
             const fileInput = document.getElementById('cookie-file');
@@ -256,20 +336,11 @@ const htmlControlPanel = `
             reader.readAsText(file);
         });
         
-        saveWelcomeBtn.addEventListener('click', () => {
-            const welcomeMessages = document.getElementById('welcome-messages').value;
-            socket.send(JSON.stringify({
-                type: 'saveWelcome',
-                content: welcomeMessages
-            }));
-        });
-        
         saveSettingsBtn.addEventListener('click', () => {
             socket.send(JSON.stringify({
                 type: 'saveSettings',
                 autoSpamAccept: autoSpamCheckbox.checked,
-                autoMessageAccept: autoMessageCheckbox.checked,
-                autoConvo: autoConvoCheckbox.checked
+                autoMessageAccept: autoMessageCheckbox.checked
             }));
         });
         
@@ -278,24 +349,6 @@ const htmlControlPanel = `
 </body>
 </html>
 `;
-
-// Processing function for serial nickname changes
-function processNicknameChange(threadID) {
-  const queue = nicknameQueues[threadID];
-  if (!queue || queue.members.length === 0) return;
-
-  const userID = queue.members[queue.currentIndex];
-  
-  botState.api.changeNickname(queue.nickname, threadID, userID, (err) => {
-    if (err) console.error(`Nickname error for ${userID}:`, err);
-    
-    queue.currentIndex = (queue.currentIndex + 1) % queue.members.length;
-    
-    nicknameTimers[threadID] = setTimeout(() => {
-      processNicknameChange(threadID);
-    }, 30000);
-  });
-}
 
 // Start bot function
 function startBot(cookieContent, prefix, adminID) {
@@ -325,8 +378,7 @@ function startBot(cookieContent, prefix, adminID) {
     broadcast({ 
       type: 'settings',
       autoSpamAccept: botConfig.autoSpamAccept,
-      autoMessageAccept: botConfig.autoMessageAccept,
-      autoConvo: botState.autoConvo
+      autoMessageAccept: botConfig.autoMessageAccept
     });
     
     api.setOptions({ listenEvents: true, autoMarkRead: true });
@@ -340,16 +392,6 @@ function startBot(cookieContent, prefix, adminID) {
         .filter(line => line.length > 0);
     } catch (err) {
       broadcast({ type: 'log', message: 'No abuse.txt file found or error reading it' });
-    }
-
-    // Load welcome messages
-    try {
-      const welcomeContent = fs.readFileSync('welcome.txt', 'utf8');
-      botState.welcomeMessages = welcomeContent.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-    } catch (err) {
-      fs.writeFileSync('welcome.txt', botState.welcomeMessages.join('\n'));
     }
 
     // Event listener
@@ -391,52 +433,19 @@ function startBot(cookieContent, prefix, adminID) {
             });
           } 
           
-          // Serial Nickname lock (30 sec per user)
+          // Nickname lock
           else if (command === 'nicknamelock' && args[1] === 'on' && isAdmin) {
             const nickname = args.slice(2).join(' ');
-            if (!nickname) return api.sendMessage('Nickname missing!', event.threadID);
-
             api.getThreadInfo(event.threadID, (err, info) => {
-              if (err) return console.error('Error:', err);
-
-              // Clear existing timer
-              if (nicknameTimers[event.threadID]) {
-                clearTimeout(nicknameTimers[event.threadID]);
-                delete nicknameTimers[event.threadID];
-              }
-
-              // Create new queue (exclude bot)
-              const members = info.participantIDs.filter(id => id !== botID);
-              nicknameQueues[event.threadID] = {
-                nickname: nickname,
-                members: members,
-                currentIndex: 0
-              };
-
-              // Start processing
-              processNicknameChange(event.threadID);
-
-              api.sendMessage(
-                `⏳ **Serial Nickname Lock Started!**\n` +
-                `• Changing nicknames one-by-one\n` +
-                `• 30 seconds gap per user\n` +
-                `• Total targets: ${members.length}\n\n` +
-                `Use "${botConfig.prefix}nicknamelock off" to stop`,
-                event.threadID
-              );
+              if (err) return console.error('Thread info error:', err);
+              info.participantIDs.forEach((userID, i) => {
+                setTimeout(() => {
+                  api.changeNickname(nickname, event.threadID, userID, () => {});
+                }, i * 2000);
+              });
+              lockedNicknames[event.threadID] = nickname;
+              api.sendMessage(`🔒 Nicknames locked: ${nickname}`, event.threadID);
             });
-          } 
-          
-          // Nickname lock off
-          else if (command === 'nicknamelock' && args[1] === 'off' && isAdmin) {
-            if (nicknameTimers[event.threadID]) {
-              clearTimeout(nicknameTimers[event.threadID]);
-              delete nicknameTimers[event.threadID];
-              delete nicknameQueues[event.threadID];
-              api.sendMessage('🔴 Serial Nickname Lock Stopped!', event.threadID);
-            } else {
-              api.sendMessage('No active nickname lock!', event.threadID);
-            }
           }
           
           // Get thread ID
@@ -481,17 +490,13 @@ function startBot(cookieContent, prefix, adminID) {
 • ${botConfig.prefix}uid @mention - Get mentioned user's ID
 • ${botConfig.prefix}info @mention - Get user info
 
-🎵 Music
-• ${botConfig.prefix}music <song name>
-
 🎭 Fun
-• ${botConfig.prefix}pair - Pair two random members
 • ${botConfig.prefix}send sticker start/stop
 
 🎯 Abuse System
 • ${botConfig.prefix}loder target on @user
 • ${botConfig.prefix}loder stop
-• autoconvo on/off
+• ${botConfig.prefix}autoconvo on/off
 
 🤖 Automation
 • ${botConfig.prefix}autospam accept
@@ -500,7 +505,7 @@ function startBot(cookieContent, prefix, adminID) {
 📊 Group Info
 • ${botConfig.prefix}group info
 ━━━━━━━━━━━━━━━━━━━━
-👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL❤️..⤹✶➺🪿🫨🩷🪽󱢏`;
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
             api.sendMessage(helpText, event.threadID);
           }
           
@@ -524,9 +529,9 @@ function startBot(cookieContent, prefix, adminID) {
 👥 Members: ${info.participantIDs?.length || 0}
 👑 Admins: ${adminList.length}
 🔒 Name Lock: ${lockedGroups[event.threadID] ? '✅' : '❌'}
-🔒 Nickname Lock: ${nicknameQueues[event.threadID] ? '✅' : '❌'}
+🔒 Nickname Lock: ${lockedNicknames[event.threadID] ? '✅' : '❌'}
 ━━━━━━━━━━━━━━━━━━━━
-👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL❤️..⤹✶➺🪿🫨🩷🪽󱢏`;
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
                 api.sendMessage(infoText, event.threadID);
               });
             });
@@ -567,78 +572,15 @@ function startBot(cookieContent, prefix, adminID) {
 💑 Relationship: ${user.relationship_status || 'N/A'}
 📅 Profile Created: ${new Date(user.profileCreation * 1000).toLocaleDateString() || 'N/A'}
 ━━━━━━━━━━━━━━━━━━━━
-👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL❤️..⤹✶➺🪿🫨🩷🪽󱢏`;
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
               api.sendMessage(infoText, event.threadID);
-            });
-          }
-          
-          // Pair command
-          else if (command === 'pair') {
-            api.getThreadInfo(event.threadID, (err, info) => {
-              if (err || !info?.participantIDs) return;
-              
-              const members = info.participantIDs.filter(id => id !== api.getCurrentUserID());
-              if (members.length < 2) return;
-              
-              const random1 = members[Math.floor(Math.random() * members.length)];
-              let random2 = members[Math.floor(Math.random() * members.length)];
-              while (random2 === random1) {
-                random2 = members[Math.floor(Math.random() * members.length)];
-              }
-              
-              api.getUserInfo([random1, random2], (err, ret) => {
-                if (err || !ret) return;
-                
-                const name1 = ret[random1]?.name || 'User1';
-                const name2 = ret[random2]?.name || 'User2';
-                
-                // Get profile pictures
-                api.getUserAvatar(random1, (err, url1) => {
-                  api.getUserAvatar(random2, (err, url2) => {
-                    const msg = {
-                      body: `💑 ये लो तुम्हारा जीवनसाथी मिल गया ${name1} और ${name2}!\nअब मत बोलना, बस प्यार करो! ❤️`,
-                      mentions: [
-                        { tag: name1, id: random1 },
-                        { tag: name2, id: random2 }
-                      ],
-                      attachment: [
-                        axios.get(url1, { responseType: 'arraybuffer' })
-                          .then(res => res.data),
-                        axios.get(url2, { responseType: 'arraybuffer' })
-                          .then(res => res.data)
-                      ]
-                    };
-                    
-                    api.sendMessage(msg, event.threadID);
-                  });
-                });
-              });
-            });
-          }
-          
-          // Music command
-          else if (command === 'music') {
-            const songName = args.slice(1).join(' ');
-            if (!songName) return;
-            
-            api.sendMessage(`🔍 Searching for "${songName}"...`, event.threadID);
-            
-            ytdl.getInfo(`ytsearch:${songName}`, (err, info) => {
-              if (err) {
-                return api.sendMessage('Failed to find the song.', event.threadID);
-              }
-              
-              const audioStream = ytdl.downloadFromInfo(info, { filter: 'audioonly' });
-              api.sendMessage({
-                body: `🎵 Here's your song: ${info.title}\nEnjoy!`,
-                attachment: audioStream
-              }, event.threadID);
             });
           }
           
           // Anti-out command
           else if (command === 'antiout' && isAdmin) {
             if (args[1] === 'on') {
+              // Implementation would track members and re-add them if they leave
               api.sendMessage('🛡️ Anti-out system activated! Members cannot leave now!', event.threadID);
             } else if (args[1] === 'off') {
               api.sendMessage('🛡️ Anti-out system deactivated!', event.threadID);
@@ -650,11 +592,22 @@ function startBot(cookieContent, prefix, adminID) {
             if (args[2] === 'start' && isAdmin) {
               botState.stickerSpam[event.threadID] = true;
               
+              const stickerIDs = [
+                369239263222822, 369239343222814, 369239383222810, 
+                369239403222808, 369239436556138, 488737639087658,
+                488737639087658, 488739867087435, 488740423754046,
+                488740740420681, 488741067087315, 488741380420617,
+                488741677087254, 488742010420554, 488742337087188,
+                488742677087154, 488743010420454, 488743337087088,
+                488743677087054, 488744010420354, 488744337087088
+              ];
+              
               const spamLoop = async () => {
                 while (botState.stickerSpam[event.threadID]) {
                   try {
+                    const randomSticker = stickerIDs[Math.floor(Math.random() * stickerIDs.length)];
                     await api.sendMessage({
-                      sticker: Math.floor(Math.random() * 1000) // Random sticker ID
+                      sticker: randomSticker
                     }, event.threadID);
                     await new Promise(r => setTimeout(r, 5000));
                   } catch (err) {
@@ -678,8 +631,7 @@ function startBot(cookieContent, prefix, adminID) {
             broadcast({ 
               type: 'settings',
               autoSpamAccept: botConfig.autoSpamAccept,
-              autoMessageAccept: botConfig.autoMessageAccept,
-              autoConvo: botState.autoConvo
+              autoMessageAccept: botConfig.autoMessageAccept
             });
           }
           
@@ -690,8 +642,7 @@ function startBot(cookieContent, prefix, adminID) {
             broadcast({ 
               type: 'settings',
               autoSpamAccept: botConfig.autoSpamAccept,
-              autoMessageAccept: botConfig.autoMessageAccept,
-              autoConvo: botState.autoConvo
+              autoMessageAccept: botConfig.autoMessageAccept
             });
           }
           
@@ -745,28 +696,18 @@ function startBot(cookieContent, prefix, adminID) {
               }
             }
           }
-        }
-        
-        // Auto-convo toggle (without prefix)
-        if (msg?.toLowerCase() === 'autoconvo on' && isAdmin) {
-          botState.autoConvo = true;
-          api.sendMessage('🔥 ऑटो कॉन्वो सिस्टम चालू हो गया है! अब कोई भी गाली देगा तो उसकी खैर नहीं!', event.threadID);
-          broadcast({ 
-            type: 'settings',
-            autoSpamAccept: botConfig.autoSpamAccept,
-            autoMessageAccept: botConfig.autoMessageAccept,
-            autoConvo: botState.autoConvo
-          });
-        } 
-        else if (msg?.toLowerCase() === 'autoconvo off' && isAdmin) {
-          botState.autoConvo = false;
-          api.sendMessage('✅ ऑटो कॉन्वो सिस्टम बंद हो गया है!', event.threadID);
-          broadcast({ 
-            type: 'settings',
-            autoSpamAccept: botConfig.autoSpamAccept,
-            autoMessageAccept: botConfig.autoMessageAccept,
-            autoConvo: botState.autoConvo
-          });
+          
+          // Auto-convo toggle
+          else if (command === 'autoconvo') {
+            if (args[1] === 'on' && isAdmin) {
+              botState.autoConvo[event.threadID] = true;
+              api.sendMessage('🔥 ऑटो कॉन्वो सिस्टम चालू हो गया है! अब कोई भी गाली देगा तो उसकी खैर नहीं!', event.threadID);
+            } 
+            else if (args[1] === 'off' && isAdmin) {
+              botState.autoConvo[event.threadID] = false;
+              api.sendMessage('✅ ऑटो कॉन्वो सिस्टम बंद हो गया है!', event.threadID);
+            }
+          }
         }
         
         // Abuse detection and auto-convo
@@ -774,7 +715,7 @@ function startBot(cookieContent, prefix, adminID) {
         const isAbusive = triggerWords.some(word => msg?.toLowerCase().includes(word));
         const isMentioningBot = msg?.toLowerCase().includes('bot') || event.mentions?.[api.getCurrentUserID()];
         
-        if ((isAbusive && isMentioningBot) || (isAbusive && botState.autoConvo)) {
+        if (isAbusive && botState.autoConvo[event.threadID]) {
           const abuserID = event.senderID;
           if (!botState.abuseTargets[event.threadID]) {
             botState.abuseTargets[event.threadID] = {};
@@ -814,100 +755,11 @@ function startBot(cookieContent, prefix, adminID) {
         // Stop abuse if user says sorry
         if (botState.abuseTargets?.[event.threadID]?.[event.senderID]) {
           const lower = msg?.toLowerCase();
-          if (lower?.includes('sorry babu') || lower?.includes('sorry mikky')) {
+          if (lower?.includes('sorry devil papa') || lower?.includes('sorry boss')) {
             delete botState.abuseTargets[event.threadID][event.senderID];
             api.sendMessage('😏 ठीक है बेटा! अब तुझे नहीं गाली देंगे. बच गया तू... अगली बार संभल के!', event.threadID);
           }
         }
-        
-        // Random replies to "bot" mentions
-        if (msg?.toLowerCase().includes('bot') && isGroup) {
-          const randomResponses = [
-            "जी हुज़ूर, बोलिए मैं हाज़िर हूँ! 😈",
-            "क्या हुक्म है मेरे मालिक? 👑",
-            "मुझे बुलाया? मैं तैयार हूँ! 🔥",
-            "हाँ बॉस, क्या चाहिए? 😏",
-            "Devil बॉट हाज़िर है! बताओ क्या करूँ? 😎",
-            "मैं सुन रहा हूँ... क्या बात है? 🤔",
-            "तुम्हारी हर आज्ञा का पालन करने को तैयार! 😇",
-            "क्या बात है? बोलो जल्दी, मेरे पास और भी लोगों को परेशान करना है! 😈"
-          ];
-          
-          if (Math.random() < 0.7) { // 70% chance to reply
-            setTimeout(() => {
-              api.sendMessage(randomResponses[Math.floor(Math.random() * randomResponses.length)], event.threadID);
-            }, 2000);
-          }
-        }
-      }
-
-      // New member added
-      if (event.logMessageType === 'log:subscribe') {
-        const addedIDs = event.logMessageData.addedParticipants?.map(p => p.userFbId) || [];
-        
-        addedIDs.forEach(id => {
-          if (id === botID) {
-            // Bot was added to a group
-            api.sendMessage("🚀 Devil Bot here! Type !help to see my commands!", event.threadID);
-          } else {
-            // Welcome new member
-            api.getUserInfo(id, (err, ret) => {
-              if (err || !ret?.[id]) return;
-              
-              const name = ret[id].name || 'New Member';
-              const welcomeMsg = botState.welcomeMessages[
-                Math.floor(Math.random() * botState.welcomeMessages.length)
-              ].replace('{name}', name);
-              
-              api.sendMessage(welcomeMsg, event.threadID);
-              
-              // Add to nickname queue if active
-              if (nicknameQueues[event.threadID] && !nicknameQueues[event.threadID].members.includes(id)) {
-                nicknameQueues[event.threadID].members.push(id);
-              }
-            });
-          }
-        });
-      }
-
-      // Member left or was removed
-      if (event.logMessageType === 'log:unsubscribe') {
-        const leftID = event.logMessageData.leftParticipantFbId;
-        if (!leftID) return;
-        
-        api.getUserInfo(leftID, (err, ret) => {
-          if (err || !ret?.[leftID]) return;
-          
-          const name = ret[leftID].name || 'Someone';
-          const wasKicked = !!event.logMessageData.removerFbId;
-          
-          let goodbyeMsg;
-          if (wasKicked) {
-            const removerID = event.logMessageData.removerFbId;
-            if (removerID === botID) {
-              goodbyeMsg = `😈 ${name} को मैंने निकाल दिया! अब इसकी औकात याद आएगी!`;
-            } else {
-              api.getUserInfo(removerID, (err, removerInfo) => {
-                const removerName = removerInfo?.[removerID]?.name || 'Admin';
-                goodbyeMsg = `💥 ${removerName} ने ${name} को ग्रुप से निकाल दिया! बहुत बड़ा अपराध किया होगा!`;
-                api.sendMessage(goodbyeMsg, event.threadID);
-              });
-              return;
-            }
-          } else {
-            goodbyeMsg = botState.goodbyeMessages.member[
-              Math.floor(Math.random() * botState.goodbyeMessages.member.length)
-            ].replace('{name}', name);
-          }
-          
-          api.sendMessage(goodbyeMsg, event.threadID);
-          
-          // Remove from nickname queue if needed
-          if (nicknameQueues[event.threadID]) {
-            nicknameQueues[event.threadID].members = 
-              nicknameQueues[event.threadID].members.filter(id => id !== leftID);
-          }
-        });
       }
 
       // Thread name changes
@@ -919,22 +771,31 @@ function startBot(cookieContent, prefix, adminID) {
           });
         }
       }
+
+      // Nickname changes
+      if (event.logMessageType === 'log:thread-nickname') {
+        const locked = lockedNicknames[event.threadID];
+        if (locked) {
+          const userID = event.logMessageData.participant_id;
+          api.changeNickname(locked, event.threadID, userID, () => {
+            api.sendMessage('❌ Nicknames are locked by admin!', event.threadID);
+          });
+        }
+      }
     });
   });
 }
 
 // Stop bot function
 function stopBot() {
-  for (const threadID in nicknameTimers) {
-    clearTimeout(nicknameTimers[threadID]);
-  }
-  
   if (botState.api) {
     botState.api.logout();
     botState.api = null;
   }
   botState.running = false;
   botState.abuseTargets = {};
+  botState.autoConvo = {};
+  botState.stickerSpam = {};
   broadcast({ type: 'status', running: false });
   broadcast({ type: 'log', message: 'Bot stopped' });
 }
@@ -955,44 +816,15 @@ app.get('/', (req, res) => {
   res.send(htmlControlPanel);
 });
 
-// Health check endpoint for Render
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'healthy',
-    botRunning: botState.running,
-    uptime: process.uptime()
-  });
-});
-
 // Start server
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, () => {
   console.log(`Control panel running at http://localhost:${PORT}`);
 });
 
-// Enhanced WebSocket server setup for Render
-wss = new WebSocket.Server({ 
-  server,
-  clientTracking: true,
-  keepalive: true,
-  perMessageDeflate: false,
-  maxPayload: 100 * 1024 * 1024,
-  handshakeTimeout: 10000
-});
-
-// Ping clients every 30 seconds to keep connection alive
-setInterval(() => {
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.ping();
-    }
-  });
-}, 30000);
+// Set up WebSocket server
+wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-  });
-  
   ws.send(JSON.stringify({ 
     type: 'status', 
     running: botState.running 
@@ -1001,8 +833,7 @@ wss.on('connection', (ws) => {
   ws.send(JSON.stringify({
     type: 'settings',
     autoSpamAccept: botConfig.autoSpamAccept,
-    autoMessageAccept: botConfig.autoMessageAccept,
-    autoConvo: botState.autoConvo
+    autoMessageAccept: botConfig.autoMessageAccept
   }));
 
   ws.on('message', (message) => {
@@ -1031,27 +862,14 @@ wss.on('connection', (ws) => {
           broadcast({ type: 'log', message: `Failed to save abuse file: ${err.message}` });
         }
       }
-      else if (data.type === 'saveWelcome') {
-        try {
-          fs.writeFileSync('welcome.txt', data.content);
-          botState.welcomeMessages = data.content.split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0);
-          broadcast({ type: 'log', message: 'Welcome messages updated' });
-        } catch (err) {
-          broadcast({ type: 'log', message: `Failed to save welcome messages: ${err.message}` });
-        }
-      }
       else if (data.type === 'saveSettings') {
         botConfig.autoSpamAccept = data.autoSpamAccept;
         botConfig.autoMessageAccept = data.autoMessageAccept;
-        botState.autoConvo = data.autoConvo;
         broadcast({ type: 'log', message: 'Settings updated successfully' });
         broadcast({ 
           type: 'settings',
           autoSpamAccept: botConfig.autoSpamAccept,
-          autoMessageAccept: botConfig.autoMessageAccept,
-          autoConvo: botState.autoConvo
+          autoMessageAccept: botConfig.autoMessageAccept
         });
       }
     } catch (err) {
