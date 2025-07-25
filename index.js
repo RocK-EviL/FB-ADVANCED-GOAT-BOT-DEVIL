@@ -1,53 +1,57 @@
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const wiegine = require('fca-mafiya');
 const WebSocket = require('ws');
-const axios = require('axios');
 
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Bot configuration
-let botConfig = {
+// Create user sessions directory
+const userSessionsDir = path.join(__dirname, 'user_sessions');
+if (!fs.existsSync(userSessionsDir)) {
+  fs.mkdirSync(userSessionsDir);
+}
+
+// Bot configuration template
+const botConfigTemplate = {
   prefix: '!',
   adminID: '',
   autoSpamAccept: false,
   autoMessageAccept: false
 };
 
-// Bot state
-let botState = {
-  running: false,
-  api: null,
-  abuseTargets: {},
-  autoConvo: {},
-  stickerSpam: {}
-};
+// Bot state management
+const botStates = new Map();
 
 // Abuse messages
-let abuseMessages = [];
+const abuseMessages = new Map();
 
-// Load abuse messages
-function loadAbuseMessages() {
+// Load abuse messages for a user
+function loadAbuseMessages(userId) {
+  const abuseFilePath = path.join(userSessionsDir, userId, 'abuse.txt');
   try {
-    if (fs.existsSync('abuse.txt')) {
-      abuseMessages = fs.readFileSync('abuse.txt', 'utf8')
+    if (fs.existsSync(abuseFilePath)) {
+      const messages = fs.readFileSync(abuseFilePath, 'utf8')
         .split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
-      broadcast({ type: 'log', message: 'Abuse messages loaded successfully' });
+      abuseMessages.set(userId, messages);
+      broadcastToUser(userId, { type: 'log', message: 'Abuse messages loaded successfully' });
     } else {
-      broadcast({ type: 'log', message: 'No abuse.txt file found' });
+      abuseMessages.set(userId, []);
+      broadcastToUser(userId, { type: 'log', message: 'No abuse.txt file found' });
     }
   } catch (err) {
-    broadcast({ type: 'log', message: `Error loading abuse messages: ${err.message}` });
+    broadcastToUser(userId, { type: 'log', message: `Error loading abuse messages: ${err.message}` });
+    abuseMessages.set(userId, []);
   }
 }
 
 // Locked groups and nicknames
-const lockedGroups = {};
-const lockedNicknames = {};
+const lockedGroups = new Map();
+const lockedNicknames = new Map();
 
 // WebSocket server
 let wss;
@@ -59,7 +63,7 @@ const htmlControlPanel = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Devil Bot</title>
+    <title>Devil Locker Bot</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -171,7 +175,7 @@ const htmlControlPanel = `
     </style>
 </head>
 <body>
-    <h1>🔥 FB MESSENGER GROUP CONTROLLER BOT BY DEVIL UPDATE 2025 🔥</h1>
+    <h1>🔥MULTI USER LOCKER BOT BY DEVILXGOD🔥</h1>
     
     <div class="status connecting" id="status">
         Status: Connecting to server...
@@ -192,11 +196,11 @@ const htmlControlPanel = `
             </div>
             
             <div>
-                <input type="text" id="prefix" value="${botConfig.prefix}" placeholder="Command prefix">
+                <input type="text" id="prefix" value="!" placeholder="Command prefix">
             </div>
             
             <div>
-                <input type="text" id="admin-id" placeholder="Admin Facebook ID" value="${botConfig.adminID}">
+                <input type="text" id="admin-id" placeholder="Admin Facebook ID">
             </div>
             
             <button id="start-btn">Start Bot</button>
@@ -215,14 +219,14 @@ const htmlControlPanel = `
         <div id="settings-tab" class="tab-content">
             <div>
                 <label>
-                    <input type="checkbox" id="auto-spam" ${botConfig.autoSpamAccept ? 'checked' : ''}>
+                    <input type="checkbox" id="auto-spam">
                     Auto Accept Spam Messages
                 </label>
             </div>
             
             <div>
                 <label>
-                    <input type="checkbox" id="auto-message" ${botConfig.autoMessageAccept ? 'checked' : ''}>
+                    <input type="checkbox" id="auto-message">
                     Auto Accept Message Requests
                 </label>
             </div>
@@ -233,21 +237,21 @@ const htmlControlPanel = `
         <div id="commands-tab" class="tab-content">
             <h3>Available Commands</h3>
             <div class="command-list">
-                <div class="command">${botConfig.prefix}help - Show all commands</div>
-                <div class="command">${botConfig.prefix}groupnamelock on &lt;name&gt; - Lock group name</div>
-                <div class="command">${botConfig.prefix}nicknamelock on &lt;nickname&gt; - Lock all nicknames</div>
-                <div class="command">${botConfig.prefix}tid - Get group ID</div>
-                <div class="command">${botConfig.prefix}uid - Get your ID</div>
-                <div class="command">${botConfig.prefix}uid @mention - Get mentioned user's ID</div>
-                <div class="command">${botConfig.prefix}info @mention - Get user information</div>
-                <div class="command">${botConfig.prefix}group info - Get group information</div>
-                <div class="command">${botConfig.prefix}antiout on/off - Toggle anti-out feature</div>
-                <div class="command">${botConfig.prefix}send sticker start/stop - Sticker spam</div>
-                <div class="command">${botConfig.prefix}autospam accept - Auto accept spam messages</div>
-                <div class="command">${botConfig.prefix}automessage accept - Auto accept message requests</div>
-                <div class="command">${botConfig.prefix}loder target on @user - Target a user</div>
-                <div class="command">${botConfig.prefix}loder stop - Stop targeting</div>
-                <div class="command">${botConfig.prefix}autoconvo on/off - Toggle auto conversation</div>
+                <div class="command">!help - Show all commands</div>
+                <div class="command">!groupnamelock on &lt;name&gt; - Lock group name</div>
+                <div class="command">!nicknamelock on &lt;nickname&gt; - Lock all nicknames</div>
+                <div class="command">!tid - Get group ID</div>
+                <div class="command">!uid - Get your ID</div>
+                <div class="command">!uid @mention - Get mentioned user's ID</div>
+                <div class="command">!info @mention - Get user information</div>
+                <div class="command">!group info - Get group information</div>
+                <div class="command">!antiout on/off - Toggle anti-out feature</div>
+                <div class="command">!send sticker start/stop - Sticker spam</div>
+                <div class="command">!autospam accept - Auto accept spam messages</div>
+                <div class="command">!automessage accept - Auto accept message requests</div>
+                <div class="command">!loder target on @user - Target a user</div>
+                <div class="command">!loder stop - Stop targeting</div>
+                <div class="command">!autoconvo on/off - Toggle auto conversation</div>
             </div>
         </div>
     </div>
@@ -388,55 +392,88 @@ const htmlControlPanel = `
 </html>
 `;
 
-// Start bot function
-function startBot(cookieContent, prefix, adminID) {
-  botState.running = true;
-  botConfig.prefix = prefix;
-  botConfig.adminID = adminID;
-  
+// Start bot function for a specific user
+function startBot(userId, cookieContent, prefix, adminID) {
+  const userSessionDir = path.join(userSessionsDir, userId);
+  if (!fs.existsSync(userSessionDir)) {
+    fs.mkdirSync(userSessionDir);
+  }
+
+  const botState = {
+    running: true,
+    api: null,
+    abuseTargets: {},
+    autoConvo: {},
+    stickerSpam: {},
+    config: {
+      ...botConfigTemplate,
+      prefix,
+      adminID
+    }
+  };
+
+  botStates.set(userId, botState);
+
   try {
-    fs.writeFileSync('selected_cookie.txt', cookieContent);
-    broadcast({ type: 'log', message: 'Cookie file saved' });
+    fs.writeFileSync(path.join(userSessionDir, 'selected_cookie.txt'), cookieContent);
+    broadcastToUser(userId, { type: 'log', message: 'Cookie file saved' });
   } catch (err) {
-    broadcast({ type: 'log', message: `Failed to save cookie: ${err.message}` });
+    broadcastToUser(userId, { type: 'log', message: `Failed to save cookie: ${err.message}` });
     botState.running = false;
     return;
   }
 
-  // Load abuse messages
-  loadAbuseMessages();
+  // Load abuse messages for this user
+  loadAbuseMessages(userId);
 
   wiegine.login(cookieContent, {}, (err, api) => {
     if (err || !api) {
-      broadcast({ type: 'log', message: `Login failed: ${err?.message || err}` });
+      broadcastToUser(userId, { type: 'log', message: `Login failed: ${err?.message || err}` });
       botState.running = false;
       return;
     }
 
     botState.api = api;
-    broadcast({ type: 'log', message: 'Bot logged in and running' });
-    broadcast({ type: 'status', running: true });
-    broadcast({ 
+    broadcastToUser(userId, { type: 'log', message: 'Bot logged in and running' });
+    broadcastToUser(userId, { type: 'status', running: true });
+    broadcastToUser(userId, { 
       type: 'settings',
-      autoSpamAccept: botConfig.autoSpamAccept,
-      autoMessageAccept: botConfig.autoMessageAccept
+      autoSpamAccept: botState.config.autoSpamAccept,
+      autoMessageAccept: botState.config.autoMessageAccept
     });
     
-    api.setOptions({ listenEvents: true, autoMarkRead: true });
+    // Enhanced error handling to prevent auto-logout
+    api.setOptions({ 
+      listenEvents: true, 
+      autoMarkRead: true,
+      selfListen: false,
+      forceLogin: true,
+      online: true,
+      updatePresence: true
+    });
+
+    // Add keep-alive functionality
+    const keepAliveInterval = setInterval(() => {
+      api.markAsRead(api.getCurrentUserID(), (err) => {
+        if (err) {
+          console.error(`Keep-alive error for user ${userId}:`, err);
+        }
+      });
+    }, 60000); // Every minute
 
     // Event listener
     api.listenMqtt((err, event) => {
       if (err) {
-        broadcast({ type: 'log', message: `Listen error: ${err}` });
+        broadcastToUser(userId, { type: 'log', message: `Listen error: ${err}` });
         return;
       }
 
-      const isAdmin = event.senderID === botConfig.adminID;
+      const isAdmin = event.senderID === botState.config.adminID;
       const isGroup = event.threadID !== event.senderID;
       const botID = api.getCurrentUserID();
 
       // Auto accept spam and message requests
-      if (botConfig.autoSpamAccept && event.type === 'message_request') {
+      if (botState.config.autoSpamAccept && event.type === 'message_request') {
         api.handleMessageRequest(event.threadID, true, (err) => {
           if (!err) {
             api.sendMessage("🚀 Auto-accepted your message request!", event.threadID);
@@ -450,13 +487,16 @@ function startBot(cookieContent, prefix, adminID) {
         const args = msg?.split(' ') || [];
         
         // Commands
-        if (msg?.startsWith(botConfig.prefix)) {
-          const command = args[0].slice(botConfig.prefix.length).toLowerCase();
+        if (msg?.startsWith(botState.config.prefix)) {
+          const command = args[0].slice(botState.config.prefix.length).toLowerCase();
           
           // Group name lock
           if (command === 'groupnamelock' && args[1] === 'on' && isAdmin) {
             const groupName = args.slice(2).join(' ');
-            lockedGroups[event.threadID] = groupName;
+            if (!lockedGroups.has(userId)) {
+              lockedGroups.set(userId, {});
+            }
+            lockedGroups.get(userId)[event.threadID] = groupName;
             api.setTitle(groupName, event.threadID, (err) => {
               if (err) return api.sendMessage('Failed to lock group name.', event.threadID);
               api.sendMessage(`🔒 Group name locked: ${groupName}`, event.threadID);
@@ -473,7 +513,10 @@ function startBot(cookieContent, prefix, adminID) {
                   api.changeNickname(nickname, event.threadID, userID, () => {});
                 }, i * 2000);
               });
-              lockedNicknames[event.threadID] = nickname;
+              if (!lockedNicknames.has(userId)) {
+                lockedNicknames.set(userId, {});
+              }
+              lockedNicknames.get(userId)[event.threadID] = nickname;
               api.sendMessage(`🔒 Nicknames locked: ${nickname}`, event.threadID);
             });
           }
@@ -510,30 +553,30 @@ function startBot(cookieContent, prefix, adminID) {
 🛠️ 𝗕𝗢𝗧 𝗖𝗢𝗠𝗠𝗔𝗡𝗗𝗦 𝗠𝗘𝗡𝗨
 ━━━━━━━━━━━━━━━━━━━━
 🔒 Group Management
-• ${botConfig.prefix}groupnamelock on <name>
-• ${botConfig.prefix}nicknamelock on <nickname>
-• ${botConfig.prefix}antiout on/off
+• ${botState.config.prefix}groupnamelock on <name>
+• ${botState.config.prefix}nicknamelock on <nickname>
+• ${botState.config.prefix}antiout on/off
 
 🆔 ID Commands
-• ${botConfig.prefix}tid - Get group ID
-• ${botConfig.prefix}uid - Get your ID
-• ${botConfig.prefix}uid @mention - Get mentioned user's ID
-• ${botConfig.prefix}info @mention - Get user info
+• ${botState.config.prefix}tid - Get group ID
+• ${botState.config.prefix}uid - Get your ID
+• ${botState.config.prefix}uid @mention - Get mentioned user's ID
+• ${botState.config.prefix}info @mention - Get user info
 
 🎭 Fun
-• ${botConfig.prefix}send sticker start/stop
+• ${botState.config.prefix}send sticker start/stop
 
 🎯 Abuse System
-• ${botConfig.prefix}loder target on @user
-• ${botConfig.prefix}loder stop
-• ${botConfig.prefix}autoconvo on/off
+• ${botState.config.prefix}loder target on @user
+• ${botState.config.prefix}loder stop
+• ${botState.config.prefix}autoconvo on/off
 
 🤖 Automation
-• ${botConfig.prefix}autospam accept
-• ${botConfig.prefix}automessage accept
+• ${botState.config.prefix}autospam accept
+• ${botState.config.prefix}automessage accept
 
 📊 Group Info
-• ${botConfig.prefix}group info
+• ${botState.config.prefix}group info
 ━━━━━━━━━━━━━━━━━━━━
 👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
             api.sendMessage(helpText, event.threadID);
@@ -544,12 +587,13 @@ function startBot(cookieContent, prefix, adminID) {
             api.getThreadInfo(event.threadID, (err, info) => {
               if (err || !info) return api.sendMessage('Failed to get group info.', event.threadID);
               
-              // Get admin list
               const adminList = info.adminIDs?.map(admin => admin.id) || [];
               
-              // Get participant info
               api.getUserInfo(info.participantIDs, (err, users) => {
                 if (err) users = {};
+                
+                const userLocks = lockedGroups.get(userId) || {};
+                const nicknameLocks = lockedNicknames.get(userId) || {};
                 
                 const infoText = `
 📌 𝗚𝗿𝗼𝘂𝗽 𝗜𝗻𝗳𝗼
@@ -558,8 +602,8 @@ function startBot(cookieContent, prefix, adminID) {
 🆔 ID: ${event.threadID}
 👥 Members: ${info.participantIDs?.length || 0}
 👑 Admins: ${adminList.length}
-🔒 Name Lock: ${lockedGroups[event.threadID] ? '✅' : '❌'}
-🔒 Nickname Lock: ${lockedNicknames[event.threadID] ? '✅' : '❌'}
+🔒 Name Lock: ${userLocks[event.threadID] ? '✅' : '❌'}
+🔒 Nickname Lock: ${nicknameLocks[event.threadID] ? '✅' : '❌'}
 ━━━━━━━━━━━━━━━━━━━━
 👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
                 api.sendMessage(infoText, event.threadID);
@@ -610,7 +654,6 @@ function startBot(cookieContent, prefix, adminID) {
           // Anti-out command
           else if (command === 'antiout' && isAdmin) {
             if (args[1] === 'on') {
-              // Implementation would track members and re-add them if they leave
               api.sendMessage('🛡️ Anti-out system activated! Members cannot leave now!', event.threadID);
             } else if (args[1] === 'off') {
               api.sendMessage('🛡️ Anti-out system deactivated!', event.threadID);
@@ -725,23 +768,23 @@ function startBot(cookieContent, prefix, adminID) {
           
           // Auto spam accept command
           else if (command === 'autospam' && args[1] === 'accept' && isAdmin) {
-            botConfig.autoSpamAccept = !botConfig.autoSpamAccept;
-            api.sendMessage(`✅ Auto spam accept ${botConfig.autoSpamAccept ? 'enabled' : 'disabled'}!`, event.threadID);
-            broadcast({ 
+            botState.config.autoSpamAccept = !botState.config.autoSpamAccept;
+            api.sendMessage(`✅ Auto spam accept ${botState.config.autoSpamAccept ? 'enabled' : 'disabled'}!`, event.threadID);
+            broadcastToUser(userId, { 
               type: 'settings',
-              autoSpamAccept: botConfig.autoSpamAccept,
-              autoMessageAccept: botConfig.autoMessageAccept
+              autoSpamAccept: botState.config.autoSpamAccept,
+              autoMessageAccept: botState.config.autoMessageAccept
             });
           }
           
           // Auto message accept command
           else if (command === 'automessage' && args[1] === 'accept' && isAdmin) {
-            botConfig.autoMessageAccept = !botConfig.autoMessageAccept;
-            api.sendMessage(`✅ Auto message accept ${botConfig.autoMessageAccept ? 'enabled' : 'disabled'}!`, event.threadID);
-            broadcast({ 
+            botState.config.autoMessageAccept = !botState.config.autoMessageAccept;
+            api.sendMessage(`✅ Auto message accept ${botState.config.autoMessageAccept ? 'enabled' : 'disabled'}!`, event.threadID);
+            broadcastToUser(userId, { 
               type: 'settings',
-              autoSpamAccept: botConfig.autoSpamAccept,
-              autoMessageAccept: botConfig.autoMessageAccept
+              autoSpamAccept: botState.config.autoSpamAccept,
+              autoMessageAccept: botState.config.autoMessageAccept
             });
           }
           
@@ -759,10 +802,10 @@ function startBot(cookieContent, prefix, adminID) {
                   const name = ret?.[targetID]?.name || 'User';
                   api.sendMessage(`🎯 ${name} को टारगेट कर दिया गया है! अब इसकी खैर नहीं!`, event.threadID);
                   
-                  // Start abuse loop
                   const spamLoop = async () => {
-                    while (botState.abuseTargets[event.threadID]?.[targetID] && abuseMessages.length > 0) {
-                      const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                    const userAbuseMessages = abuseMessages.get(userId) || [];
+                    while (botState.abuseTargets[event.threadID]?.[targetID] && userAbuseMessages.length > 0) {
+                      const randomMsg = userAbuseMessages[Math.floor(Math.random() * userAbuseMessages.length)];
                       const mentionTag = `@${name.split(' ')[0]}`;
                       
                       try {
@@ -796,7 +839,7 @@ function startBot(cookieContent, prefix, adminID) {
             }
           }
           
-          // Auto-convo toggle
+          // Enhanced Auto-convo toggle with owner protection
           else if (command === 'autoconvo') {
             if (args[1] === 'on' && isAdmin) {
               botState.autoConvo[event.threadID] = true;
@@ -809,18 +852,36 @@ function startBot(cookieContent, prefix, adminID) {
           }
         }
         
-        // Abuse detection and auto-convo
+        // Enhanced Abuse detection and auto-convo with owner protection
         const triggerWords = ['bc', 'mc', 'bkl', 'bhenchod', 'madarchod', 'lund', 'gandu', 'chutiya', 'randi', 'motherchod', 'fuck', 'bhosda'];
         const isAbusive = triggerWords.some(word => msg?.toLowerCase().includes(word));
         const isMentioningBot = msg?.toLowerCase().includes('bot') || event.mentions?.[api.getCurrentUserID()];
         
-        if (isAbusive && botState.autoConvo[event.threadID] && (isMentioningBot || event.senderID === botConfig.adminID)) {
+        // Don't respond if the message is from admin/owner
+        if (isAdmin) {
+          if (isAbusive || isMentioningBot) {
+            // Send polite response to owner
+            const responses = [
+              "😊 Yes boss? How can I help you?",
+              "👑 At your service, Devil Boss!",
+              "🔥 Ready for your commands, my lord!",
+              "💀 Your wish is my command, master!",
+              "👿 How may I serve you today, Devil Boss?"
+            ];
+            const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+            api.sendMessage(randomResponse, event.threadID);
+          }
+          return;
+        }
+        
+        if (isAbusive && botState.autoConvo[event.threadID] && (isMentioningBot || isGroup)) {
           const abuserID = event.senderID;
           if (!botState.abuseTargets[event.threadID]) {
             botState.abuseTargets[event.threadID] = {};
           }
           
-          if (!botState.abuseTargets[event.threadID][abuserID] && abuseMessages.length > 0) {
+          const userAbuseMessages = abuseMessages.get(userId) || [];
+          if (!botState.abuseTargets[event.threadID][abuserID] && userAbuseMessages.length > 0) {
             botState.abuseTargets[event.threadID][abuserID] = true;
             
             api.getUserInfo(abuserID, (err, ret) => {
@@ -830,8 +891,8 @@ function startBot(cookieContent, prefix, adminID) {
               api.sendMessage(`😡 ${name} तूने मुझे गाली दी? अब तेरी खैर नहीं!`, event.threadID);
               
               const spamLoop = async () => {
-                while (botState.abuseTargets[event.threadID]?.[abuserID] && abuseMessages.length > 0) {
-                  const randomMsg = abuseMessages[Math.floor(Math.random() * abuseMessages.length)];
+                while (botState.abuseTargets[event.threadID]?.[abuserID] && userAbuseMessages.length > 0) {
+                  const randomMsg = userAbuseMessages[Math.floor(Math.random() * userAbuseMessages.length)];
                   const mentionTag = `@${name.split(' ')[0]}`;
                   
                   try {
@@ -863,7 +924,8 @@ function startBot(cookieContent, prefix, adminID) {
 
       // Thread name changes
       if (event.logMessageType === 'log:thread-name') {
-        const locked = lockedGroups[event.threadID];
+        const userLocks = lockedGroups.get(userId) || {};
+        const locked = userLocks[event.threadID];
         if (locked) {
           api.setTitle(locked, event.threadID, () => {
             api.sendMessage('❌ Group name is locked by admin!', event.threadID);
@@ -873,7 +935,8 @@ function startBot(cookieContent, prefix, adminID) {
 
       // Nickname changes
       if (event.logMessageType === 'log:thread-nickname') {
-        const locked = lockedNicknames[event.threadID];
+        const userNicknameLocks = lockedNicknames.get(userId) || {};
+        const locked = userNicknameLocks[event.threadID];
         if (locked) {
           const userID = event.logMessageData.participant_id;
           api.changeNickname(locked, event.threadID, userID, () => {
@@ -881,30 +944,97 @@ function startBot(cookieContent, prefix, adminID) {
           });
         }
       }
+      
+      // Welcome new members
+      if (event.logMessageType === 'log:subscribe') {
+        const addedIDs = event.logMessageData.addedParticipants.map(p => p.userFbId);
+        if (addedIDs.length > 0) {
+          api.getUserInfo(addedIDs, (err, ret) => {
+            if (err) return;
+            
+            const welcomeMessages = [
+              "🔥 Welcome to the Devil's Den, {name}!",
+              "👿 {name} has entered the battlefield!",
+              "💀 The Devil welcomes you, {name}!",
+              "👹 {name}, prepare for chaos!",
+              "👺 Welcome to hell, {name}! Enjoy your stay!"
+            ];
+            
+            addedIDs.forEach(id => {
+              const name = ret[id]?.name || 'New Member';
+              const randomMessage = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)].replace('{name}', name);
+              api.sendMessage(randomMessage, event.threadID);
+            });
+          });
+        }
+      }
+      
+      // Farewell to members who left
+      if (event.logMessageType === 'log:unsubscribe') {
+        const leftID = event.logMessageData.leftParticipantFbId;
+        if (leftID) {
+          api.getUserInfo(leftID, (err, ret) => {
+            if (err) return;
+            
+            const name = ret[leftID]?.name || 'Someone';
+            const farewellMessages = [
+              `😂 ${name} couldn't handle the heat! Bye bye!`,
+              `😈 ${name} ran away scared! What a coward!`,
+              `👋 ${name} left! One less problem to deal with!`,
+              `🚪 ${name} exited stage left! Don't let the door hit you!`,
+              `💨 ${name} vanished like a fart in the wind!`
+            ];
+            
+            const randomMessage = farewellMessages[Math.floor(Math.random() * farewellMessages.length)];
+            api.sendMessage(randomMessage, event.threadID);
+          });
+        }
+      }
+    });
+    
+    // Handle logout/errors
+    api.on('logout', () => {
+      clearInterval(keepAliveInterval);
+      broadcastToUser(userId, { type: 'log', message: 'Bot logged out unexpectedly' });
+      botState.running = false;
+      broadcastToUser(userId, { type: 'status', running: false });
+    });
+    
+    api.on('error', (err) => {
+      broadcastToUser(userId, { type: 'log', message: `Bot error: ${err.message}` });
     });
   });
 }
 
-// Stop bot function
-function stopBot() {
+// Stop bot function for a specific user
+function stopBot(userId) {
+  const botState = botStates.get(userId);
+  if (!botState) return;
+
   if (botState.api) {
-    botState.api.logout();
+    try {
+      botState.api.logout();
+    } catch (err) {
+      console.error(`Error logging out user ${userId}:`, err);
+    }
     botState.api = null;
   }
+  
   botState.running = false;
   botState.abuseTargets = {};
   botState.autoConvo = {};
   botState.stickerSpam = {};
-  broadcast({ type: 'status', running: false });
-  broadcast({ type: 'log', message: 'Bot stopped' });
+  
+  broadcastToUser(userId, { type: 'status', running: false });
+  broadcastToUser(userId, { type: 'log', message: 'Bot stopped successfully' });
 }
 
-// WebSocket broadcast function
-function broadcast(message) {
+// WebSocket broadcast to a specific user
+function broadcastToUser(userId, message) {
   if (!wss) return;
   
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
+    if (client.readyState === WebSocket.OPEN && client.userId === userId) {
       client.send(JSON.stringify(message));
     }
   });
@@ -918,13 +1048,18 @@ app.get('/', (req, res) => {
 // Start server
 const server = app.listen(PORT, () => {
   console.log(`Control panel running at http://localhost:${PORT}`);
-  broadcast({ type: 'log', message: 'Server started successfully' });
 });
 
 // Set up WebSocket server
 wss = new WebSocket.Server({ server });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Generate a unique ID for this user session
+  const userId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  ws.userId = userId;
+  
+  // Send initial state
+  const botState = botStates.get(userId) || { running: false, config: botConfigTemplate };
   ws.send(JSON.stringify({ 
     type: 'status', 
     running: botState.running 
@@ -932,8 +1067,8 @@ wss.on('connection', (ws) => {
   
   ws.send(JSON.stringify({
     type: 'settings',
-    autoSpamAccept: botConfig.autoSpamAccept,
-    autoMessageAccept: botConfig.autoMessageAccept
+    autoSpamAccept: botState.config.autoSpamAccept,
+    autoMessageAccept: botState.config.autoMessageAccept
   }));
 
   ws.on('message', (message) => {
@@ -941,40 +1076,73 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(message);
       
       if (data.type === 'start') {
-        botConfig.prefix = data.prefix;
-        botConfig.adminID = data.adminId;
-        
-        try {
-          if (!data.cookieContent) throw new Error('No cookie content provided');
-          startBot(data.cookieContent, botConfig.prefix, botConfig.adminID);
-        } catch (err) {
-          broadcast({ type: 'log', message: `Error with cookie: ${err.message}` });
+        const existingState = botStates.get(userId);
+        if (existingState?.running) {
+          ws.send(JSON.stringify({ 
+            type: 'log', 
+            message: 'Bot is already running for this session' 
+          }));
+          return;
         }
+        
+        if (!data.cookieContent) {
+          ws.send(JSON.stringify({ 
+            type: 'log', 
+            message: 'No cookie content provided' 
+          }));
+          return;
+        }
+        
+        startBot(userId, data.cookieContent, data.prefix, data.adminId);
       } 
       else if (data.type === 'stop') {
-        stopBot();
+        stopBot(userId);
       }
       else if (data.type === 'uploadAbuse') {
         try {
-          fs.writeFileSync('abuse.txt', data.content);
-          loadAbuseMessages();
-          broadcast({ type: 'log', message: 'Abuse messages file updated' });
+          const userSessionDir = path.join(userSessionsDir, userId);
+          if (!fs.existsSync(userSessionDir)) {
+            fs.mkdirSync(userSessionDir);
+          }
+          
+          fs.writeFileSync(path.join(userSessionDir, 'abuse.txt'), data.content);
+          loadAbuseMessages(userId);
+          broadcastToUser(userId, { type: 'log', message: 'Abuse messages file updated' });
         } catch (err) {
-          broadcast({ type: 'log', message: `Failed to save abuse file: ${err.message}` });
+          broadcastToUser(userId, { type: 'log', message: `Failed to save abuse file: ${err.message}` });
         }
       }
       else if (data.type === 'saveSettings') {
-        botConfig.autoSpamAccept = data.autoSpamAccept;
-        botConfig.autoMessageAccept = data.autoMessageAccept;
-        broadcast({ type: 'log', message: 'Settings updated successfully' });
-        broadcast({ 
-          type: 'settings',
-          autoSpamAccept: botConfig.autoSpamAccept,
-          autoMessageAccept: botConfig.autoMessageAccept
-        });
+        const botState = botStates.get(userId);
+        if (botState) {
+          botState.config.autoSpamAccept = data.autoSpamAccept;
+          botState.config.autoMessageAccept = data.autoMessageAccept;
+          broadcastToUser(userId, { type: 'log', message: 'Settings updated successfully' });
+          broadcastToUser(userId, { 
+            type: 'settings',
+            autoSpamAccept: botState.config.autoSpamAccept,
+            autoMessageAccept: botState.config.autoMessageAccept
+          });
+        }
       }
     } catch (err) {
       console.error('Error processing WebSocket message:', err);
     }
+  });
+  
+  ws.on('close', () => {
+    console.log(`Client disconnected: ${userId}`);
+  });
+});
+
+// Handle process exits gracefully
+process.on('SIGINT', () => {
+  console.log('Shutting down gracefully...');
+  botStates.forEach((state, userId) => {
+    stopBot(userId);
+  });
+  wss.close();
+  server.close(() => {
+    process.exit(0);
   });
 });
