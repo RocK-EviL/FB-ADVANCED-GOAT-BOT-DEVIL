@@ -171,7 +171,7 @@ const htmlControlPanel = `
     </style>
 </head>
 <body>
-    <h1>🔥 Ultimate Devil Bot Control Panel 🔥</h1>
+    <h1>🔥 FB MESSENGER GROUP CONTROLLER BOT BY DEVIL UPDATE 2025 🔥</h1>
     
     <div class="status connecting" id="status">
         Status: Connecting to server...
