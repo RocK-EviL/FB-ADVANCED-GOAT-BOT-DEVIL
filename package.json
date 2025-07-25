@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "clean-install": "npm uninstall ws3-fca && npm install ws3-fca@2.0.1"
+    "clean-install": "npm uninstall ws3-fca && npm install fca-mafiya"
   },
   "keywords": [
     "facebook",
@@ -18,7 +18,7 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "ws3-fca": "2.0.1",
+    "fca-mafiya": "^1.0.0",
     "ws": "^8.13.0",
     "axios": "^1.6.2"
   },
