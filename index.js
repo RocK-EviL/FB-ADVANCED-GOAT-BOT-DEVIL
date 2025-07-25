@@ -1,6 +1,6 @@
 const fs = require('fs');
 const express = require('express');
-const wiegine = require('ws3-fca');
+const wiegine = require('fca-mafiya');
 const WebSocket = require('ws');
 const axios = require('axios');
 
