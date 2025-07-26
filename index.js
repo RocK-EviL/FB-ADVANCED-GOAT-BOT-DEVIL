@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const wiegine = require('fca-mafiya');
 const WebSocket = require('ws');
+const axios = require('axios');
 
 // Initialize Express app
 const app = express();
@@ -63,7 +64,7 @@ const htmlControlPanel = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Devil Locker Bot</title>
+    <title>Ultimate Devil Bot</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -172,10 +173,36 @@ const htmlControlPanel = `
             border-radius: 4px;
             font-family: monospace;
         }
+        .welcome-box {
+            border: 2px solid #ff00ff;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            background: linear-gradient(135deg, #1e0033, #3a0068);
+            box-shadow: 0 0 15px #ff00ff;
+        }
+        .welcome-title {
+            font-size: 24px;
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff;
+            margin-bottom: 10px;
+        }
+        .welcome-text {
+            font-family: 'Comic Sans MS', cursive;
+            color: #ffffff;
+        }
+        .pair-box {
+            border: 2px solid #ff69b4;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            background: linear-gradient(135deg, #33001e, #68003a);
+            box-shadow: 0 0 15px #ff69b4;
+        }
     </style>
 </head>
 <body>
-    <h1>🔥MULTI USER LOCKER BOT BY DEVILXGOD🔥</h1>
+    <h1>🔥 Ultimate Devil Bot Control Panel 🔥</h1>
     
     <div class="status connecting" id="status">
         Status: Connecting to server...
@@ -252,6 +279,11 @@ const htmlControlPanel = `
                 <div class="command">!loder target on @user - Target a user</div>
                 <div class="command">!loder stop - Stop targeting</div>
                 <div class="command">!autoconvo on/off - Toggle auto conversation</div>
+                <div class="command">!pair - Match with a random user</div>
+                <div class="command">!music &lt;song name&gt; - Play requested song</div>
+                <div class="command">!joke - Get a random joke</div>
+                <div class="command">!quote - Get an inspirational quote</div>
+                <div class="command">!fact - Get a random fact</div>
             </div>
         </div>
     </div>
@@ -565,6 +597,11 @@ function startBot(userId, cookieContent, prefix, adminID) {
 
 🎭 Fun
 • ${botState.config.prefix}send sticker start/stop
+• ${botState.config.prefix}pair - Match with random user
+• ${botState.config.prefix}music <song> - Play requested song
+• ${botState.config.prefix}joke - Get random joke
+• ${botState.config.prefix}quote - Get inspirational quote
+• ${botState.config.prefix}fact - Get random fact
 
 🎯 Abuse System
 • ${botState.config.prefix}loder target on @user
@@ -588,12 +625,14 @@ function startBot(userId, cookieContent, prefix, adminID) {
               if (err || !info) return api.sendMessage('Failed to get group info.', event.threadID);
               
               const adminList = info.adminIDs?.map(admin => admin.id) || [];
+              const creatorID = info.threadID.split(':')[1] || info.adminIDs?.[0]?.id;
               
               api.getUserInfo(info.participantIDs, (err, users) => {
                 if (err) users = {};
                 
                 const userLocks = lockedGroups.get(userId) || {};
                 const nicknameLocks = lockedNicknames.get(userId) || {};
+                const creatorName = users[creatorID]?.name || 'Unknown';
                 
                 const infoText = `
 📌 𝗚𝗿𝗼𝘂𝗽 𝗜𝗻𝗳𝗼
@@ -602,6 +641,7 @@ function startBot(userId, cookieContent, prefix, adminID) {
 🆔 ID: ${event.threadID}
 👥 Members: ${info.participantIDs?.length || 0}
 👑 Admins: ${adminList.length}
+👑 Creator: ${creatorName}
 🔒 Name Lock: ${userLocks[event.threadID] ? '✅' : '❌'}
 🔒 Nickname Lock: ${nicknameLocks[event.threadID] ? '✅' : '❌'}
 ━━━━━━━━━━━━━━━━━━━━
@@ -850,6 +890,93 @@ function startBot(userId, cookieContent, prefix, adminID) {
               api.sendMessage('✅ ऑटो कॉन्वो सिस्टम बंद हो गया है!', event.threadID);
             }
           }
+          
+          // Pair command
+          else if (command === 'pair') {
+            api.getThreadInfo(event.threadID, (err, info) => {
+              if (err || !info) return;
+              
+              const participants = info.participantIDs.filter(id => id !== botID && id !== event.senderID);
+              if (participants.length < 1) return api.sendMessage("Not enough members to pair!", event.threadID);
+              
+              const randomUser = participants[Math.floor(Math.random() * participants.length)];
+              
+              api.getUserInfo([event.senderID, randomUser], (err, ret) => {
+                if (err) return;
+                
+                const user1 = ret[event.senderID]?.name || "User 1";
+                const user2 = ret[randomUser]?.name || "User 2";
+                const user1Profile = `https://facebook.com/${event.senderID}`;
+                const user2Profile = `https://facebook.com/${randomUser}`;
+                
+                const pairText = `
+💘 𝗟𝗼𝘃𝗲 𝗣𝗮𝗶𝗿 💘
+━━━━━━━━━━━━━━━━━━━━
+❤️ ${user1} + ${user2} = 💑
+━━━━━━━━━━━━━━━━━━━━
+✨ Congratulations! You two are made for each other!
+💕 Enjoy your new relationship!
+━━━━━━━━━━━━━━━━━━━━
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`;
+                
+                api.sendMessage({
+                  body: pairText,
+                  mentions: [
+                    { tag: user1, id: event.senderID },
+                    { tag: user2, id: randomUser }
+                  ]
+                }, event.threadID);
+              });
+            });
+          }
+          
+          // Music command
+          else if (command === 'music') {
+            const songName = args.slice(1).join(' ');
+            if (!songName) return api.sendMessage("Please specify a song name!", event.threadID);
+            
+            // In a real implementation, you would integrate with a music API here
+            api.sendMessage(`🎵 Here's your requested song: ${songName}\n🔗 Play it now and enjoy!`, event.threadID);
+          }
+          
+          // Joke command
+          else if (command === 'joke') {
+            const jokes = [
+              "Why don't scientists trust atoms? Because they make up everything!",
+              "Did you hear about the mathematician who's afraid of negative numbers? He'll stop at nothing to avoid them!",
+              "Why don't skeletons fight each other? They don't have the guts!",
+              "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+              "What do you call a fake noodle? An impasta!"
+            ];
+            const randomJoke = jokes[Math.floor(Math.random() * jokes.length)];
+            api.sendMessage(`😂 Joke:\n${randomJoke}`, event.threadID);
+          }
+          
+          // Quote command
+          else if (command === 'quote') {
+            const quotes = [
+              "The only way to do great work is to love what you do. - Steve Jobs",
+              "Life is what happens when you're busy making other plans. - John Lennon",
+              "The future belongs to those who believe in the beauty of their dreams. - Eleanor Roosevelt",
+              "Strive not to be a success, but rather to be of value. - Albert Einstein",
+              "You miss 100% of the shots you don't take. - Wayne Gretzky"
+            ];
+            const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+            api.sendMessage(`💬 Quote:\n${randomQuote}`, event.threadID);
+          }
+          
+          // Fact command
+          else if (command === 'fact') {
+            const facts = [
+              "Honey never spoils. Archaeologists have found pots of honey in ancient Egyptian tombs that are over 3,000 years old and still perfectly good to eat.",
+              "Octopuses have three hearts, nine brains, and blue blood.",
+              "The shortest war in history was between Britain and Zanzibar on August 27, 1896. Zanzibar surrendered after 38 minutes.",
+              "A group of flamingos is called a 'flamboyance'.",
+              "The inventor of the frisbee was turned into a frisbee after he died."
+            ];
+            const randomFact = facts[Math.floor(Math.random() * facts.length)];
+            api.sendMessage(`📚 Fact:\n${randomFact}`, event.threadID);
+          }
         }
         
         // Enhanced Abuse detection and auto-convo with owner protection
@@ -920,6 +1047,19 @@ function startBot(userId, cookieContent, prefix, adminID) {
             api.sendMessage('😏 ठीक है बेटा! अब तुझे नहीं गाली देंगे. बच गया तू... अगली बार संभल के!', event.threadID);
           }
         }
+        
+        // Random response when someone mentions "bot"
+        if (isMentioningBot && !isAbusive) {
+          const botResponses = [
+            "Yes? How can I help you?",
+            "At your service!",
+            "What can I do for you?",
+            "I'm listening...",
+            "Need something?"
+          ];
+          const randomResponse = botResponses[Math.floor(Math.random() * botResponses.length)];
+          api.sendMessage(randomResponse, event.threadID);
+        }
       }
 
       // Thread name changes
@@ -952,18 +1092,47 @@ function startBot(userId, cookieContent, prefix, adminID) {
           api.getUserInfo(addedIDs, (err, ret) => {
             if (err) return;
             
-            const welcomeMessages = [
-              "🔥 Welcome to the Devil's Den, {name}!",
-              "👿 {name} has entered the battlefield!",
-              "💀 The Devil welcomes you, {name}!",
-              "👹 {name}, prepare for chaos!",
-              "👺 Welcome to hell, {name}! Enjoy your stay!"
-            ];
-            
-            addedIDs.forEach(id => {
-              const name = ret[id]?.name || 'New Member';
-              const randomMessage = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)].replace('{name}', name);
-              api.sendMessage(randomMessage, event.threadID);
+            api.getThreadInfo(event.threadID, (err, info) => {
+              if (err) return;
+              
+              const adminList = info.adminIDs?.map(admin => admin.id) || [];
+              const creatorID = info.threadID.split(':')[1] || info.adminIDs?.[0]?.id;
+              
+              api.getUserInfo([creatorID, botState.config.adminID], (err, creators) => {
+                const creatorName = creators[creatorID]?.name || "Group Creator";
+                const ownerName = creators[botState.config.adminID]?.name || "Devil Boss";
+                
+                addedIDs.forEach(id => {
+                  const name = ret[id]?.name || 'New Member';
+                  const welcomeMessages = [
+                    `✨ 𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝗧𝗼 𝗧𝗵𝗲 𝗚𝗿𝗼𝘂𝗽 ✨
+━━━━━━━━━━━━━━━━━━━━
+🌟 𝗡𝗮𝗺𝗲: ${name}
+🏷️ 𝗚𝗿𝗼𝘂𝗽: ${info.threadName || 'N/A'}
+👑 𝗢𝘄𝗻𝗲𝗿: ${ownerName}
+👥 𝗠𝗲𝗺𝗯𝗲𝗿𝘀: ${info.participantIDs?.length || 0}
+━━━━━━━━━━━━━━━━━━━━
+💫 Enjoy your stay in our group!
+🔥 Follow all rules and have fun!
+━━━━━━━━━━━━━━━━━━━━
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`,
+                    `💥 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗡𝗘𝗪 𝗠𝗘𝗠𝗕𝗘𝗥! 💥
+━━━━━━━━━━━━━━━━━━━━
+👋 𝗛𝗲𝘆 ${name}!
+🎉 Welcome to ${info.threadName || 'our group'}!
+👑 𝗢𝘄𝗻𝗲𝗿: ${ownerName}
+👥 𝗧𝗼𝘁𝗮𝗹 𝗠𝗲𝗺𝗯𝗲𝗿𝘀: ${info.participantIDs?.length || 0}
+━━━━━━━━━━━━━━━━━━━━
+💀 Be careful of Devil Boss!
+😈 Follow rules and enjoy!
+━━━━━━━━━━━━━━━━━━━━
+👑 𝗖𝗿𝗲𝗮𝘁𝗲𝗱 𝗕𝘆: ✶♡⤾➝GODXDEVIL.⤹✶➺🪿🫨🩷🪽󱢏`
+                  ];
+                  
+                  const randomMessage = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+                  api.sendMessage(randomMessage, event.threadID);
+                });
+              });
             });
           });
         }
@@ -982,7 +1151,9 @@ function startBot(userId, cookieContent, prefix, adminID) {
               `😈 ${name} ran away scared! What a coward!`,
               `👋 ${name} left! One less problem to deal with!`,
               `🚪 ${name} exited stage left! Don't let the door hit you!`,
-              `💨 ${name} vanished like a fart in the wind!`
+              `💨 ${name} vanished like a fart in the wind!`,
+              `👻 ${name} got scared of Devil Boss and left!`,
+              `🏃‍♂️ ${name} couldn't handle the pressure and ran away!`
             ];
             
             const randomMessage = farewellMessages[Math.floor(Math.random() * farewellMessages.length)];
